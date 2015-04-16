@@ -180,6 +180,14 @@ typedef enum {
 } virTypedParameterType;
 
 /**
+ * VIR_TYPED_PARAM_MULTIPLE:
+ *
+ * Flag indiciating that the params has multiple occurences of the parameter
+ * Only used in virTypedParamsValidate/virTypedParamsValidateDuplicates.
+ */
+# define VIR_TYPED_PARAM_MULTIPLE (1 << 31)
+
+/**
  * virTypedParameterFlags:
  *
  * Flags related to libvirt APIs that use virTypedParameter.
