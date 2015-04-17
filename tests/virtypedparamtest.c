@@ -95,6 +95,85 @@ testTypedParamsValidate(const void *opaque)
 #define PARAM(field_, type_) { .field = field_, .type = type_ }
 
 static int
+testTypedParamsPick(const void *opaque ATTRIBUTE_UNUSED)
+{
+    int i, rv = -1;
+    virTypedParameter params[] = {
+        { .field = "bar", .type = VIR_TYPED_PARAM_UINT },
+        { .field = "foo", .type = VIR_TYPED_PARAM_INT },
+        { .field = "bar", .type = VIR_TYPED_PARAM_UINT },
+        { .field = "foo", .type = VIR_TYPED_PARAM_INT },
+        { .field = "foobar", .type = VIR_TYPED_PARAM_STRING },
+        { .field = "foo", .type = VIR_TYPED_PARAM_INT }
+    };
+    virTypedParameterPtr *picked_params = NULL;
+    size_t picked;
+
+
+    picked_params = virTypedParamsPick(params, ARRAY_CARDINALITY(params),
+                                       "foo", VIR_TYPED_PARAM_INT, &picked);
+    if (picked != 3)
+        goto cleanup;
+
+    for (i = 0; i < picked; i++) {
+        if (picked_params[i] != &params[1 + i * 2])
+            goto cleanup;
+    }
+    VIR_FREE(picked_params);
+
+    picked_params = virTypedParamsPick(params, ARRAY_CARDINALITY(params),
+                                       "bar", VIR_TYPED_PARAM_UINT, &picked);
+
+    if (picked != 2)
+        goto cleanup;
+
+    for (i = 0; i < picked; i++) {
+        if (picked_params[i] != &params[i * 2])
+            goto cleanup;
+    }
+
+    rv = 0;
+ cleanup:
+    VIR_FREE(picked_params);
+    return rv;
+}
+
+static int
+testTypedParamsPickStrings(const void *opaque ATTRIBUTE_UNUSED)
+{
+    int i = 0, rv = -1;
+    const char **strings = NULL;
+    virTypedParameter params[] = {
+        { .field = "bar", .type = VIR_TYPED_PARAM_STRING,
+          .value = { .s = (char*)"bar1"} },
+        { .field = "foo", .type = VIR_TYPED_PARAM_INT },
+        { .field = "bar", .type = VIR_TYPED_PARAM_STRING,
+          .value = { .s = (char*)"bar2"} },
+        { .field = "foo", .type = VIR_TYPED_PARAM_INT },
+        { .field = "foobar", .type = VIR_TYPED_PARAM_STRING },
+        { .field = "foo", .type = VIR_TYPED_PARAM_INT },
+        { .field = "bar", .type = VIR_TYPED_PARAM_STRING,
+          .value = { .s = (char*)"bar3"} }
+    };
+
+    strings = virTypedParamsPickStrings(params,
+                                        ARRAY_CARDINALITY(params),
+                                        "bar");
+
+    for (i = 0; strings[i]; i++) {
+        if (!STREQLEN(strings[i], "bar", 3))
+            goto cleanup;
+        if (strings[i][3] != i + '1')
+            goto cleanup;
+    }
+
+    rv = 0;
+ cleanup:
+    VIR_FREE(strings);
+    return rv;
+}
+
+static int
 testTypedParamsValidator(void)
 {
     int i, rv = 0;
@@ -166,6 +245,12 @@ mymain(void)
     int rv = 0;
 
     if (testTypedParamsValidator() < 0)
+        rv = -1;
+
+    if (virtTestRun("Picking", testTypedParamsPick, NULL) < 0)
+        rv = -1;
+
+    if (virtTestRun("Picking Strings", testTypedParamsPickStrings, NULL) < 0)
         rv = -1;
 
     if (rv < 0)

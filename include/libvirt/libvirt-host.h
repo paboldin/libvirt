@@ -256,6 +256,12 @@ virTypedParameterPtr
 virTypedParamsGet       (virTypedParameterPtr params,
                          int nparams,
                          const char *name);
+virTypedParameterPtr*
+virTypedParamsPick      (virTypedParameterPtr params,
+                         int nparams,
+                         const char *name,
+                         int type,
+                         size_t *picked);
 int
 virTypedParamsGetInt    (virTypedParameterPtr params,
                          int nparams,
@@ -291,6 +297,10 @@ virTypedParamsGetString (virTypedParameterPtr params,
                          int nparams,
                          const char *name,
                          const char **value);
+const char **
+virTypedParamsPickStrings(virTypedParameterPtr params,
+                         int nparams,
+                         const char *name);
 int
 virTypedParamsAddInt    (virTypedParameterPtr *params,
                          int *nparams,

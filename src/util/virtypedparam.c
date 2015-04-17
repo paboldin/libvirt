@@ -481,6 +481,56 @@ virTypedParamsGet(virTypedParameterPtr params,
 }
 
 
+/**
+ * virTypedParamsPick:
+ * @params: array of typed parameters
+ * @nparams: number of parameters in the @params array
+ * @name: name of the parameter to find
+ * @type: type of the parameter to find
+ * @picked: pointer to an int with amount of picked
+ *
+ *
+ * Finds typed parameters called @name.
+ *
+ * Returns pointers to the parameters or NULL if there are none in @params.
+ * This function does not raise an error, even when returning NULL.
+ * Callee should call VIR_FREE on the returned array.
+ */
+virTypedParameterPtr*
+virTypedParamsPick(virTypedParameterPtr params,
+                   int nparams,
+                   const char *name,
+                   int type,
+                   size_t *picked)
+{
+    size_t i, max = 0;
+    virTypedParameterPtr *values = NULL;
+
+    *picked = 0;
+
+    if (!params || !name)
+        return NULL;
+
+    for (i = 0; i < nparams; i++) {
+        if (params[i].type == type && STREQ(params[i].field, name)) {
+            if (VIR_RESIZE_N(values, max, *picked, 1) < 0)
+                goto error;
+
+            values[*picked] = &params[i];
+
+            *picked += 1;
+        }
+    }
+
+    return values;
+
+error:
+    *picked = 0;
+    VIR_FREE(values);
+    return NULL;
+}
+
+
 #define VIR_TYPED_PARAM_CHECK_TYPE(check_type)                              \
     do { if (param->type != check_type) {                                   \
         virReportError(VIR_ERR_INVALID_ARG,                                 \
@@ -745,6 +795,45 @@ virTypedParamsGetString(virTypedParameterPtr params,
         *value = param->value.s;
 
     return 1;
+}
+
+
+/**
+ * virTypedParamsPickStrings:
+ * @params: array of typed parameters
+ * @nparams: number of parameters in the @params array
+ * @name: name of the parameter to find
+ *
+ *
+ * Finds typed parameters called @name.
+ *
+ * Returns pointers to the parameters or NULL if there are none in @params.
+ * This function does not raise an error, even when returning NULL.
+ * Callee should call VIR_FREE on the returned array.
+ */
+const char **
+virTypedParamsPickStrings(virTypedParameterPtr params,
+                          int nparams, const char *name)
+{
+    const char **values = NULL;
+    size_t i, picked;
+    virTypedParameterPtr *picked_params;
+
+    picked_params = virTypedParamsPick(params, nparams,
+                                       name, VIR_TYPED_PARAM_STRING,
+                                       &picked);
+
+    if (picked_params == NULL)
+        return NULL;
+
+    if (VIR_ALLOC_N(values, picked + 1) < 0)
+        return NULL;
+
+    for (i = 0; i < picked; i++) {
+        values[i] = picked_params[i]->value.s;
+    }
+
+    return values;
 }
 
 
