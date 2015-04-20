@@ -748,6 +748,13 @@ typedef enum {
  */
 # define VIR_MIGRATE_PARAM_LISTEN_ADDRESS    "listen_address"
 
+/**
+ * VIR_MIGRATE_PARAM_MIGRATE_DISKS:
+ *
+ * virDomainMigrate* params multiple field: TODO
+ */
+# define VIR_MIGRATE_PARAM_MIGRATE_DISKS    "migrate_disks"
+
 /* Domain migration. */
 virDomainPtr virDomainMigrate (virDomainPtr domain, virConnectPtr dconn,
                                unsigned long flags, const char *dname,
