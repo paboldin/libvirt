@@ -1132,6 +1132,43 @@ virTypedParamsAddBoolean(virTypedParameterPtr *params,
     return -1;
 }
 
+static int
+virTypedParamsAddStringFull(virTypedParameterPtr *params,
+                            int *nparams,
+                            int *maxparams,
+                            const char *name,
+                            const char *value,
+                            bool unique)
+{
+    char *str = NULL;
+    size_t max = *maxparams;
+    size_t n = *nparams;
+
+    virResetLastError();
+
+    if (unique)
+        VIR_TYPED_PARAM_CHECK();
+    if (VIR_RESIZE_N(*params, max, n, 1) < 0)
+        goto error;
+    *maxparams = max;
+
+    if (VIR_STRDUP(str, value) < 0)
+        goto error;
+
+    if (virTypedParameterAssign(*params + n, name,
+                                VIR_TYPED_PARAM_STRING, str) < 0) {
+        VIR_FREE(str);
+        goto error;
+    }
+
+    *nparams += 1;
+    return 0;
+
+ error:
+    virDispatchError(NULL);
+    return -1;
+}
+
 
 /**
  * virTypedParamsAddString:
@@ -1160,32 +1197,50 @@ virTypedParamsAddString(virTypedParameterPtr *params,
                         const char *name,
                         const char *value)
 {
-    char *str = NULL;
-    size_t max = *maxparams;
-    size_t n = *nparams;
+    return virTypedParamsAddStringFull(params,
+                                       nparams,
+                                       maxparams,
+                                       name,
+                                       value,
+                                       1);
+}
 
-    virResetLastError();
 
-    VIR_TYPED_PARAM_CHECK();
-    if (VIR_RESIZE_N(*params, max, n, 1) < 0)
-        goto error;
-    *maxparams = max;
+/**
+ * virTypedParamsPackStrings:
+ * @params: array of typed parameters
+ * @nparams: number of parameters in the @params array
+ * @maxparams: maximum number of parameters that can be stored in @params
+ *      array without allocating more memory
+ * @name: name of the parameter to find
+ * @values: the values to store into the new parameter
+ *
+ * TODO
+ * Finds typed parameters called @name.
+ *
+ * Returns pointers to the parameters or NULL if there are none in @params.
+ * This function does not raise an error, even when returning NULL.
+ * Callee should call VIR_FREE on the returned array.
+ */
+int
+virTypedParamsPackStrings(virTypedParameterPtr *params,
+                          int *nparams,
+                          int *maxparams,
+                          const char *name,
+                          const char **values)
+{
+    int i, rv = -1;
 
-    if (VIR_STRDUP(str, value) < 0)
-        goto error;
+    if (!values)
+        return 0;
 
-    if (virTypedParameterAssign(*params + n, name,
-                                VIR_TYPED_PARAM_STRING, str) < 0) {
-        VIR_FREE(str);
-        goto error;
+    for (i = 0; values[i]; i++) {
+        if ((rv = virTypedParamsAddStringFull(params, nparams, maxparams,
+                                              name, values[i], 0)) < 0)
+            break;
     }
 
-    *nparams += 1;
-    return 0;
-
- error:
-    virDispatchError(NULL);
-    return -1;
+    return rv;
 }
 
 

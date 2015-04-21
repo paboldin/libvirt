@@ -139,6 +139,31 @@ testTypedParamsPick(const void *opaque ATTRIBUTE_UNUSED)
 }
 
 static int
+testTypedParamsPackStrings(const void *opaque ATTRIBUTE_UNUSED)
+{
+    int rv = 0;
+    virTypedParameterPtr params = NULL;
+    int nparams = 0, maxparams = 0, i;
+
+    const char *values[] = {
+        "foo", "bar", "foobar", NULL
+    };
+
+    rv = virTypedParamsPackStrings(&params, &nparams, &maxparams, "param",
+                                   values);
+
+    for (i = 0; i < nparams; i++) {
+        if (STRNEQ(params[i].field, "param") ||
+            STRNEQ(params[i].value.s, values[i]) ||
+            params[i].type != VIR_TYPED_PARAM_STRING)
+            rv = -1;
+    }
+
+    virTypedParamsFree(params, nparams);
+    return rv;
+}
+
+static int
 testTypedParamsPickStrings(const void *opaque ATTRIBUTE_UNUSED)
 {
     int i = 0, rv = -1;
@@ -251,6 +276,9 @@ mymain(void)
         rv = -1;
 
     if (virtTestRun("Picking Strings", testTypedParamsPickStrings, NULL) < 0)
+        rv = -1;
+
+    if (virtTestRun("Packing Strings", testTypedParamsPackStrings, NULL) < 0)
         rv = -1;
 
     if (rv < 0)

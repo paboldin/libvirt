@@ -704,6 +704,7 @@ LIBVIRT_1.2.14 {
         virDomainInterfaceFree;
         virTypedParamsPick;
         virTypedParamsPickStrings;
+        virTypedParamsPackStrings;
 } LIBVIRT_1.2.12;
 
 # .... define new API here using predicted next version number ....
