@@ -9617,6 +9617,10 @@ static const vshCmdOptDef opts_migrate[] = {
      .type = VSH_OT_STRING,
      .help = N_("filename containing updated XML for the target")
     },
+    {.name = "migratedisks",
+     .type = VSH_OT_STRING,
+     .help = N_("comma separated list of disks to be migrated")
+    },
     {.name = NULL}
 };
 
@@ -9675,6 +9679,46 @@ doMigrate(void *opaque)
         virTypedParamsAddString(&params, &nparams, &maxparams,
                                 VIR_MIGRATE_PARAM_DEST_NAME, opt) < 0)
         goto save_error;
+
+    if (vshCommandOptStringReq(ctl, cmd, "migratedisks", &opt) < 0)
+        goto out;
+    if (opt) {
+        const char **val = NULL;
+        char *tok, *saveptr = NULL, *opt_copy = NULL, *optp;
+        size_t alloc = 0, count = 0;
+
+        if (VIR_STRDUP(opt_copy, opt) < 0) {
+            goto save_error;
+        }
+
+        optp = opt_copy;
+        do {
+            tok = strtok_r(optp, ",", &saveptr);
+            optp = NULL;
+
+            if (VIR_RESIZE_N(val, alloc, count, 1) < 0) {
+                VIR_FREE(opt_copy);
+                VIR_FREE(val);
+                goto save_error;
+            }
+
+            val[count] = tok;
+            count++;
+        } while (tok != NULL);
+
+        if (virTypedParamsPackStrings(&params,
+                                      &nparams,
+                                      &maxparams,
+                                      VIR_MIGRATE_PARAM_MIGRATE_DISKS,
+                                      val) < 0) {
+            VIR_FREE(opt_copy);
+            VIR_FREE(val);
+            goto save_error;
+        }
+
+        VIR_FREE(opt_copy);
+        VIR_FREE(val);
+    }
 
     if (vshCommandOptStringReq(ctl, cmd, "xml", &opt) < 0)
         goto out;
