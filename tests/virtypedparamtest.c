@@ -73,65 +73,83 @@ testTypedParamsValidate(const void *opaque)
     return rv;
 }
 
+#define TEST(testname) {                    \
+                        .name = testname,
+
+#define ENDTEST    },
+
+#define FOOBAR_SINGLE   .foobar_flags = 0,
+#define FOOBAR_MULTIPLE .foobar_flags = VIR_TYPED_PARAM_MULTIPLE,
+
+#define EXPECTED_OK .expected_errcode = 0, .expected_errmessage = NULL,
+#define EXPECTED_ERROR(code, msg) .expected_errcode = code, \
+                                  .expected_errmessage = msg,
+
+#define PARAMS_ARRAY(...) ((virTypedParameter[]){ __VA_ARGS__ })
+#define PARAMS_SIZE(...) ARRAY_CARDINALITY(PARAMS_ARRAY(__VA_ARGS__))
+
+#define PARAMS(...) \
+    .params  = PARAMS_ARRAY(__VA_ARGS__), \
+    .nparams = PARAMS_SIZE(__VA_ARGS__),
+
+#define PARAM(field_, type_) { .field = field_, .type = type_ }
+
 static int
 testTypedParamsValidator(void)
 {
     int i, rv = 0;
 
     TypedParameterTest test[] = {
-        {
-            .name = "Invalid arg type",
-            .foobar_flags = 0,
-            .params = (virTypedParameter[]){
-                { .field = "foobar", .type = VIR_TYPED_PARAM_INT }
-            }, .nparams = 1, .expected_errcode = VIR_ERR_INVALID_ARG,
-            .expected_errmessage =
+        TEST("Invalid arg type")
+            FOOBAR_SINGLE
+            PARAMS( PARAM("foobar", VIR_TYPED_PARAM_INT) )
+            EXPECTED_ERROR(
+                VIR_ERR_INVALID_ARG,
                 "invalid argument: invalid type 'int' for parameter "
                 "'foobar', expected 'string'"
-        },
-        {
-            .name = "Extra arg",
-            .foobar_flags = 0,
-            .params = (virTypedParameter[]){
-                { .field = "f", .type = VIR_TYPED_PARAM_INT }
-            }, .nparams = 1, .expected_errcode = VIR_ERR_INVALID_ARG,
-            .expected_errmessage =
+            )
+        ENDTEST
+        TEST("Extra arg")
+            FOOBAR_SINGLE
+            PARAMS( PARAM("f", VIR_TYPED_PARAM_INT) )
+            EXPECTED_ERROR(
+                VIR_ERR_INVALID_ARG,
                 "argument unsupported: parameter 'f' not supported"
+            )
+        ENDTEST
+        TEST("Valid parameters")
+            FOOBAR_SINGLE
+            PARAMS(
+                PARAM( "bar",  VIR_TYPED_PARAM_UINT ),
+                PARAM( "foobar", VIR_TYPED_PARAM_STRING ),
+                PARAM( "foo", VIR_TYPED_PARAM_INT )
+            )
+            EXPECTED_OK
+        ENDTEST
+        TEST("Duplicates incorrect")
+            FOOBAR_SINGLE
+            PARAMS(
+                PARAM("bar", VIR_TYPED_PARAM_UINT ),
+                PARAM("foobar", VIR_TYPED_PARAM_STRING ),
+                PARAM("foobar", VIR_TYPED_PARAM_STRING ),
+                PARAM("foo", VIR_TYPED_PARAM_INT )
+            )
+            EXPECTED_ERROR(
+                VIR_ERR_INVALID_ARG,
+                "invalid argument: parameter 'foobar' occurs multiple times"
+            )
+        ENDTEST
+        TEST("Duplicates OK for marked")
+            FOOBAR_MULTIPLE
+            PARAMS(
+                PARAM("bar", VIR_TYPED_PARAM_UINT ),
+                PARAM("foobar", VIR_TYPED_PARAM_STRING ),
+                PARAM("foobar", VIR_TYPED_PARAM_STRING ),
+                PARAM("foo", VIR_TYPED_PARAM_INT )
+            )
+            EXPECTED_OK
         },
-        {
-            .name = "Correct",
-            .foobar_flags = 0,
-            .params = (virTypedParameter[]){
-                { .field = "bar", .type = VIR_TYPED_PARAM_UINT },
-                { .field = "foobar", .type = VIR_TYPED_PARAM_STRING },
-                { .field = "foo", .type = VIR_TYPED_PARAM_INT },
-            }, .nparams = 3, .expected_errcode = 0, .expected_errmessage = NULL
-        },
-        {
-            .name = "Duplicates incorrect",
-            .foobar_flags = 0,
-            .params = (virTypedParameter[]){
-                { .field = "bar", .type = VIR_TYPED_PARAM_UINT },
-                { .field = "foobar", .type = VIR_TYPED_PARAM_STRING },
-                { .field = "foobar", .type = VIR_TYPED_PARAM_STRING },
-                { .field = "foo", .type = VIR_TYPED_PARAM_INT },
-            }, .nparams = 4, .expected_errcode = VIR_ERR_INVALID_ARG,
-            .expected_errmessage = "invalid argument: parameter "
-                                   "'foobar' occurs multiple times"
-        },
-        {
-            .name = "Duplicates OK for marked",
-            .foobar_flags = VIR_TYPED_PARAM_MULTIPLE,
-            .params = (virTypedParameter[]){
-                { .field = "bar", .type = VIR_TYPED_PARAM_UINT },
-                { .field = "foobar", .type = VIR_TYPED_PARAM_STRING },
-                { .field = "foobar", .type = VIR_TYPED_PARAM_STRING },
-                { .field = "foo", .type = VIR_TYPED_PARAM_INT },
-            }, .nparams = 4, .expected_errcode = 0, .expected_errmessage = NULL
-        },
-        {
-            .name = NULL
-        }
+        TEST(NULL) ENDTEST
     };
 
     for (i = 0; test[i].name; ++i) {
