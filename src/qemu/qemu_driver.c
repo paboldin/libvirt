@@ -12500,7 +12500,7 @@ qemuDomainMigratePrepareTunnel3Params(virConnectPtr dconn,
     if (!(def = qemuMigrationPrepareDef(driver, dom_xml, dname, &origname)))
         goto cleanup;
 
-    if (virDomainMigratePrepareTunnel3ParamsEnsureACL(dconn, def) < 0)
+    if (virDomainMigratePrepareTunnels3ParamsEnsureACL(dconn, def) < 0)
         goto cleanup;
 
     ret = qemuMigrationPrepareTunnel(driver, dconn,

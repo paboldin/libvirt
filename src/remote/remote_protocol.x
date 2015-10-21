@@ -3240,6 +3240,18 @@ struct remote_domain_rename_ret {
     int retcode;
 };
 
+struct remote_domain_migrate_prepare_tunnels3_params_args {
+    remote_typed_param params<REMOTE_DOMAIN_MIGRATE_PARAM_LIST_MAX>;
+    opaque cookie_in<REMOTE_MIGRATE_COOKIE_MAX>;
+    unsigned int flags;
+    unsigned int tunnels;
+};
+
+struct remote_domain_migrate_prepare_tunnels3_params_ret {
+    opaque cookie_out<REMOTE_MIGRATE_COOKIE_MAX>; /* insert@3 */
+};
+
+
 /*----- Protocol. -----*/
 
 /* Define the program number, protocol version and procedure numbers here. */
@@ -5712,5 +5724,13 @@ enum remote_procedure {
      * @acl: domain:write
      * @acl: domain:save
      */
-    REMOTE_PROC_DOMAIN_RENAME = 358
+    REMOTE_PROC_DOMAIN_RENAME = 358,
+
+    /**
+     * @generate: none
+     * @acl: domain:migrate
+     * @acl: domain:start
+     * @acl: domain:write
+     */
+    REMOTE_PROC_DOMAIN_MIGRATE_PREPARE_TUNNELS3_PARAMS = 359
 };

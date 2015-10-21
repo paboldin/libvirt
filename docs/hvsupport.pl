@@ -199,6 +199,7 @@ $apis{virDomainMigratePrepareTunnel3Params}->{vers} = "1.1.0";
 $apis{virDomainMigratePerform3Params}->{vers} = "1.1.0";
 $apis{virDomainMigrateFinish3Params}->{vers} = "1.1.0";
 $apis{virDomainMigrateConfirm3Params}->{vers} = "1.1.0";
+$apis{virDomainMigratePrepareTunnels3Params}->{vers} = "1.2.XXX";
 
 
 

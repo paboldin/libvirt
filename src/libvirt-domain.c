@@ -5175,6 +5175,63 @@ virDomainMigratePrepareTunnel3Params(virConnectPtr conn,
  * implementation of migration in the remote case.
  */
 int
+virDomainMigratePrepareTunnels3Params(virConnectPtr conn,
+                                      virStreamPtr *sts,
+                                      int nstreams,
+                                      virTypedParameterPtr params,
+                                      int nparams,
+                                      const char *cookiein,
+                                      int cookieinlen,
+                                      char **cookieout,
+                                      int *cookieoutlen,
+                                      unsigned int flags)
+{
+    int i;
+    VIR_DEBUG("conn=%p, streams=%p, nstreams=%d, params=%p, nparams=%d, "
+              "cookiein=%p, cookieinlen=%d, cookieout=%p, cookieoutlen=%p, "
+              "flags=%x",
+              conn, sts, nstreams, params, nparams, cookiein, cookieinlen,
+              cookieout, cookieoutlen, flags);
+    VIR_TYPED_PARAMS_DEBUG(params, nparams);
+
+    virResetLastError();
+
+    virCheckConnectReturn(conn, -1);
+    virCheckReadOnlyGoto(conn->flags, error);
+    virCheckNonNullArgGoto(sts, error);
+    virCheckPositiveArgGoto(nstreams, error);
+
+    for (i = 0; i < nstreams; i++) {
+        if (conn != sts[i]->conn) {
+            virReportInvalidArg(conn, "%s",
+                                _("conn must match stream connection"));
+            goto error;
+        }
+    }
+
+    if (conn->driver->domainMigratePrepareTunnels3Params) {
+        int rv;
+        rv = conn->driver->domainMigratePrepareTunnels3Params(
+                conn, sts, nstreams, params, nparams, cookiein, cookieinlen,
+                cookieout, cookieoutlen, flags);
+        if (rv < 0)
+            goto error;
+        return rv;
+    }
+
+    virReportUnsupportedError();
+
+ error:
+    virDispatchError(conn);
+    return -1;
+}
+
+
+/*
+ * Not for public use.  This function is part of the internal
+ * implementation of migration in the remote case.
+ */
+int
 virDomainMigratePerform3Params(virDomainPtr domain,
                                const char *dconnuri,
                                virTypedParameterPtr params,

@@ -5515,6 +5515,94 @@ remoteDispatchDomainMigratePrepareTunnel3Params(virNetServerPtr server ATTRIBUTE
 
 
 static int
+remoteDispatchDomainMigratePrepareTunnels3Params(virNetServerPtr server ATTRIBUTE_UNUSED,
+                                                 virNetServerClientPtr client,
+                                                 virNetMessagePtr msg,
+                                                 virNetMessageErrorPtr rerr,
+                                                 remote_domain_migrate_prepare_tunnels3_params_args *args,
+                                                 remote_domain_migrate_prepare_tunnels3_params_ret *ret)
+{
+    virTypedParameterPtr params = NULL;
+    int nparams = 0;
+    char *cookieout = NULL;
+    int cookieoutlen = 0;
+    int rv = -1;
+    struct daemonClientPrivate *priv =
+        virNetServerClientGetPrivateData(client);
+    virStreamPtr *sts = NULL;
+    daemonClientStreamPtr *streams = NULL;
+    int i = 0;
+
+    if (!priv->conn) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("connection not open"));
+        goto cleanup;
+    }
+
+    if (args->params.params_len > REMOTE_DOMAIN_MIGRATE_PARAM_LIST_MAX) {
+        virReportError(VIR_ERR_RPC,
+                       _("Too many migration parameters '%d' for limit '%d'"),
+                       args->params.params_len, REMOTE_DOMAIN_MIGRATE_PARAM_LIST_MAX);
+        goto cleanup;
+    }
+
+    if (!(params = remoteDeserializeTypedParameters(args->params.params_val,
+                                                    args->params.params_len,
+                                                    0, &nparams)))
+        goto cleanup;
+
+    if (VIR_ALLOC_N(sts, args->tunnels) < 0 ||
+        VIR_ALLOC_N(streams, args->tunnels) < 0)
+        goto cleanup;
+
+    for (i = 0; i < args->tunnels; ++i) {
+        virNetMessageHeader header = msg->header;
+        header.serial = msg->header.serial + i;
+
+        if (!(sts[i] = virStreamNew(priv->conn, VIR_STREAM_NONBLOCK)) ||
+            !(streams[i] = daemonCreateClientStream(client, sts[i],
+                                                    remoteProgram, &header)))
+            goto cleanup;
+    }
+
+
+    if (virDomainMigratePrepareTunnels3Params(priv->conn, sts, args->tunnels,
+                                              params, nparams,
+                                              args->cookie_in.cookie_in_val,
+                                              args->cookie_in.cookie_in_len,
+                                              &cookieout, &cookieoutlen,
+                                              args->flags) < 0)
+        goto cleanup;
+
+    for (i = 0; i < args->tunnels; ++i) {
+        if (daemonAddClientStream(client, streams[i], !!i) < 0)
+            goto cleanup;
+    }
+
+    ret->cookie_out.cookie_out_val = cookieout;
+    ret->cookie_out.cookie_out_len = cookieoutlen;
+    rv = 0;
+
+ cleanup:
+    virTypedParamsFree(params, nparams);
+    if (rv < 0) {
+        virNetMessageSaveError(rerr);
+        VIR_FREE(cookieout);
+        for (i = 0; i < args->tunnels; ++i) {
+            if (streams[i]) {
+                virStreamAbort(sts[i]);
+                daemonFreeClientStream(client, streams[i]);
+            } else {
+                virObjectUnref(sts[i]);
+            }
+        }
+    }
+    VIR_FREE(sts);
+    VIR_FREE(streams);
+    return rv;
+}
+
+
+static int
 remoteDispatchDomainMigratePerform3Params(virNetServerPtr server ATTRIBUTE_UNUSED,
                                           virNetServerClientPtr client ATTRIBUTE_UNUSED,
                                           virNetMessagePtr msg ATTRIBUTE_UNUSED,
