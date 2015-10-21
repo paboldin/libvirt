@@ -1212,6 +1212,19 @@ typedef int
                                const char *password,
                                unsigned int flags);
 
+typedef int
+(*virDrvDomainMigratePrepareTunnels3Params)(virConnectPtr dconn,
+                                            virStreamPtr *streams,
+                                            int nstreams,
+                                            virTypedParameterPtr params,
+                                            int nparams,
+                                            const char *cookiein,
+                                            int cookieinlen,
+                                            char **cookieout,
+                                            int *cookieoutlen,
+                                            unsigned int flags);
+
+
 typedef struct _virHypervisorDriver virHypervisorDriver;
 typedef virHypervisorDriver *virHypervisorDriverPtr;
 
@@ -1443,6 +1456,7 @@ struct _virHypervisorDriver {
     virDrvDomainGetFSInfo domainGetFSInfo;
     virDrvDomainInterfaceAddresses domainInterfaceAddresses;
     virDrvDomainSetUserPassword domainSetUserPassword;
+    virDrvDomainMigratePrepareTunnels3Params domainMigratePrepareTunnels3Params;
 };
 
 
