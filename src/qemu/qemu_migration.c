@@ -4935,6 +4935,21 @@ doPeer2PeerMigrate3(virQEMUDriverPtr driver,
             goto cleanup;
 
         qemuDomainObjEnterRemote(vm);
+//#error HERE BE THE DRAGONS
+//#warning HERE BE THE DRAGONS
+
+/*
+So, the overall plan is the following:
+1. Introduce domainMigratePrepareTunnel*s*3Params call accepting a few streams.
+Implement PrepareTunnel as a call to this.
+2. Fix daemon/remote code to associate NetClient to *each* of the streams,
+distinguishing by `serial`.
+3. Fix qemuMigrateIOFunc to poll each of the streams and writing/readnig to
+them as necessary.
+4. Implement NBD tunnelling to UNIX files.
+5. Allow for NBD over tunnel.
+*/
+
         if (useParams) {
             ret = dconn->driver->domainMigratePrepareTunnel3Params
                 (dconn, st, params, nparams, cookiein, cookieinlen,
