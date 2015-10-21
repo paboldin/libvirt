@@ -256,6 +256,17 @@ int virDomainMigratePrepareTunnel3Params(virConnectPtr conn,
                                          int *cookieoutlen,
                                          unsigned int flags);
 
+int virDomainMigratePrepareTunnels3Params(virConnectPtr conn,
+                                          virStreamPtr *sts,
+                                          int nstreams,
+                                          virTypedParameterPtr params,
+                                          int nparams,
+                                          const char *cookiein,
+                                          int cookieinlen,
+                                          char **cookieout,
+                                          int *cookieoutlen,
+                                          unsigned int flags);
+
 int virDomainMigratePerform3Params(virDomainPtr domain,
                                    const char *dconnuri,
                                    virTypedParameterPtr params,
