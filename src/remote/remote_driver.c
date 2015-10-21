@@ -6122,13 +6122,14 @@ remoteDomainMigratePrepare3(virConnectPtr dconn,
 static virNetClientStreamPtr
 virRemoteClientOpen(virStreamPtr st,
                     struct private_data *priv,
+                    int counter,
                     enum remote_procedure proc)
 {
     virNetClientStreamPtr netst;
 
     if (!(netst = virNetClientStreamNew(priv->remoteProgram,
                                         proc,
-                                        priv->counter)))
+                                        counter)))
         return NULL;
 
     if (virNetClientAddStream(priv->client, netst) < 0) {
@@ -6165,7 +6166,7 @@ remoteDomainMigratePrepareTunnel3(virConnectPtr dconn,
     memset(&args, 0, sizeof(args));
     memset(&ret, 0, sizeof(ret));
 
-    netst = virRemoteClientOpen(st, priv,
+    netst = virRemoteClientOpen(st, priv, priv->counter,
                                 REMOTE_PROC_DOMAIN_MIGRATE_PREPARE_TUNNEL3);
 
     if (netst == NULL)
@@ -7168,6 +7169,100 @@ remoteDomainMigratePrepare3Params(virConnectPtr dconn,
 
 
 static int
+remoteDomainMigratePrepareTunnels3Params(virConnectPtr dconn,
+                                         virStreamPtr *sts,
+                                         int nstreams,
+                                         virTypedParameterPtr params,
+                                         int nparams,
+                                         const char *cookiein,
+                                         int cookieinlen,
+                                         char **cookieout,
+                                         int *cookieoutlen,
+                                         unsigned int flags)
+{
+    struct private_data *priv = dconn->privateData;
+    int rv = -1, i;
+    remote_domain_migrate_prepare_tunnels3_params_args args;
+    remote_domain_migrate_prepare_tunnels3_params_ret ret;
+    virNetClientStreamPtr *netsts;
+
+    remoteDriverLock(priv);
+
+    memset(&args, 0, sizeof(args));
+    memset(&ret, 0, sizeof(ret));
+
+    if (nparams > REMOTE_DOMAIN_MIGRATE_PARAM_LIST_MAX) {
+        virReportError(VIR_ERR_RPC,
+                       _("Too many migration parameters '%d' for limit '%d'"),
+                       nparams, REMOTE_DOMAIN_MIGRATE_PARAM_LIST_MAX);
+        goto cleanup;
+    }
+
+    args.cookie_in.cookie_in_val = (char *)cookiein;
+    args.cookie_in.cookie_in_len = cookieinlen;
+    args.flags = flags;
+    args.tunnels = nstreams;
+
+    if (remoteSerializeTypedParameters(params, nparams,
+                                       &args.params.params_val,
+                                       &args.params.params_len) < 0) {
+        xdr_free((xdrproc_t) xdr_remote_domain_migrate_prepare_tunnels3_params_args,
+                 (char *) &args);
+        goto cleanup;
+    }
+
+    if (VIR_ALLOC_N(netsts, nstreams) < 0)
+        goto cleanup;
+
+    for (i = 0; i < nstreams; ++i) {
+        netsts[i] = virRemoteClientOpen(sts[i], priv, priv->counter + i,
+                                        REMOTE_PROC_DOMAIN_MIGRATE_PREPARE_TUNNELS3_PARAMS);
+
+        if (netsts[i] == NULL)
+            goto cleanup_netsts;
+    }
+    priv->counter += i - 1;
+
+    if (call(dconn, priv, 0, REMOTE_PROC_DOMAIN_MIGRATE_PREPARE_TUNNEL3_PARAMS,
+             (xdrproc_t) xdr_remote_domain_migrate_prepare_tunnel3_params_args,
+             (char *) &args,
+             (xdrproc_t) xdr_remote_domain_migrate_prepare_tunnel3_params_ret,
+             (char *) &ret) == -1) {
+        goto cleanup_netsts;
+    }
+
+    if (ret.cookie_out.cookie_out_len > 0) {
+        if (!cookieout || !cookieoutlen) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                           _("caller ignores cookieout or cookieoutlen"));
+            goto error;
+        }
+        *cookieout = ret.cookie_out.cookie_out_val; /* Caller frees. */
+        *cookieoutlen = ret.cookie_out.cookie_out_len;
+    }
+
+    rv = 0;
+
+ cleanup:
+    remoteFreeTypedParameters(args.params.params_val, args.params.params_len);
+    remoteDriverUnlock(priv);
+    VIR_FREE(netsts);
+    return rv;
+
+ cleanup_netsts:
+    while (i--) {
+        virNetClientRemoveStream(priv->client, netsts[i]);
+        virObjectUnref(netsts[i]);
+    }
+    goto cleanup;
+
+ error:
+    VIR_FREE(ret.cookie_out.cookie_out_val);
+    goto cleanup;
+}
+
+
+static int
 remoteDomainMigratePrepareTunnel3Params(virConnectPtr dconn,
                                         virStreamPtr st,
                                         virTypedParameterPtr params,
@@ -7208,11 +7303,18 @@ remoteDomainMigratePrepareTunnel3Params(virConnectPtr dconn,
         goto cleanup;
     }
 
-    netst = virRemoteClientOpen(st, priv,
-                                REMOTE_PROC_DOMAIN_MIGRATE_PREPARE_TUNNEL3_PARAMS);
-
-    if (netst == NULL)
+    if (!(netst = virNetClientStreamNew(priv->remoteProgram,
+                                        REMOTE_PROC_DOMAIN_MIGRATE_PREPARE_TUNNEL3_PARAMS,
+                                        priv->counter)))
         goto cleanup;
+
+    if (virNetClientAddStream(priv->client, netst) < 0) {
+        virObjectUnref(netst);
+        goto cleanup;
+    }
+
+    st->driver = &remoteStreamDrv;
+    st->privateData = netst;
 
     if (call(dconn, priv, 0, REMOTE_PROC_DOMAIN_MIGRATE_PREPARE_TUNNEL3_PARAMS,
              (xdrproc_t) xdr_remote_domain_migrate_prepare_tunnel3_params_args,
@@ -8437,6 +8539,7 @@ static virHypervisorDriver hypervisor_driver = {
     .domainInterfaceAddresses = remoteDomainInterfaceAddresses, /* 1.2.14 */
     .domainSetUserPassword = remoteDomainSetUserPassword, /* 1.2.16 */
     .domainRename = remoteDomainRename, /* 1.2.19 */
+    .domainMigratePrepareTunnels3Params = remoteDomainMigratePrepareTunnels3Params, /* 1.2.XXX */
 };
 
 static virNetworkDriver network_driver = {
