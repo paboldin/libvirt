@@ -12462,15 +12462,16 @@ qemuDomainMigratePrepareTunnel3(virConnectPtr dconn,
 }
 
 static int
-qemuDomainMigratePrepareTunnel3Params(virConnectPtr dconn,
-                                      virStreamPtr st,
-                                      virTypedParameterPtr params,
-                                      int nparams,
-                                      const char *cookiein,
-                                      int cookieinlen,
-                                      char **cookieout,
-                                      int *cookieoutlen,
-                                      unsigned int flags)
+qemuDomainMigratePrepareTunnels3Params(virConnectPtr dconn,
+                                       virStreamPtr *sts,
+                                       int nstreams,
+                                       virTypedParameterPtr params,
+                                       int nparams,
+                                       const char *cookiein,
+                                       int cookieinlen,
+                                       char **cookieout,
+                                       int *cookieoutlen,
+                                       unsigned int flags)
 {
     virQEMUDriverPtr driver = dconn->privateData;
     virDomainDefPtr def = NULL;
@@ -12506,12 +12507,36 @@ qemuDomainMigratePrepareTunnel3Params(virConnectPtr dconn,
     ret = qemuMigrationPrepareTunnels(driver, dconn,
                                       cookiein, cookieinlen,
                                       cookieout, cookieoutlen,
-                                      &st, 1, &def, origname, flags);
+                                      sts, nstreams, &def, origname, flags);
 
  cleanup:
     VIR_FREE(origname);
     virDomainDefFree(def);
     return ret;
+}
+
+
+static int
+qemuDomainMigratePrepareTunnel3Params(virConnectPtr dconn,
+                                      virStreamPtr st,
+                                      virTypedParameterPtr params,
+                                      int nparams,
+                                      const char *cookiein,
+                                      int cookieinlen,
+                                      char **cookieout,
+                                      int *cookieoutlen,
+                                      unsigned int flags)
+{
+    return qemuDomainMigratePrepareTunnels3Params(dconn,
+                                                  &st,
+                                                  1,
+                                                  params,
+                                                  nparams,
+                                                  cookiein,
+                                                  cookieinlen,
+                                                  cookieout,
+                                                  cookieoutlen,
+                                                  flags);
 }
 
 
@@ -20269,6 +20294,7 @@ static virHypervisorDriver qemuHypervisorDriver = {
     .domainInterfaceAddresses = qemuDomainInterfaceAddresses, /* 1.2.14 */
     .domainSetUserPassword = qemuDomainSetUserPassword, /* 1.2.16 */
     .domainRename = qemuDomainRename, /* 1.2.19 */
+    .domainMigratePrepareTunnels3Params = qemuDomainMigratePrepareTunnels3Params, /* 1.2.XXX */
 };
 
 
