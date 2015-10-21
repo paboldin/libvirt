@@ -6119,6 +6119,28 @@ remoteDomainMigratePrepare3(virConnectPtr dconn,
     goto done;
 }
 
+static virNetClientStreamPtr
+virRemoteClientOpen(virStreamPtr st,
+                    struct private_data *priv,
+                    enum remote_procedure proc)
+{
+    virNetClientStreamPtr netst;
+
+    if (!(netst = virNetClientStreamNew(priv->remoteProgram,
+                                        proc,
+                                        priv->counter)))
+        return NULL;
+
+    if (virNetClientAddStream(priv->client, netst) < 0) {
+        virObjectUnref(netst);
+        return NULL;
+    }
+
+    st->driver = &remoteStreamDrv;
+    st->privateData = netst;
+
+    return netst;
+}
 
 static int
 remoteDomainMigratePrepareTunnel3(virConnectPtr dconn,
@@ -6143,18 +6165,11 @@ remoteDomainMigratePrepareTunnel3(virConnectPtr dconn,
     memset(&args, 0, sizeof(args));
     memset(&ret, 0, sizeof(ret));
 
-    if (!(netst = virNetClientStreamNew(priv->remoteProgram,
-                                        REMOTE_PROC_DOMAIN_MIGRATE_PREPARE_TUNNEL3,
-                                        priv->counter)))
-        goto done;
+    netst = virRemoteClientOpen(st, priv,
+                                REMOTE_PROC_DOMAIN_MIGRATE_PREPARE_TUNNEL3);
 
-    if (virNetClientAddStream(priv->client, netst) < 0) {
-        virObjectUnref(netst);
+    if (netst == NULL)
         goto done;
-    }
-
-    st->driver = &remoteStreamDrv;
-    st->privateData = netst;
 
     args.cookie_in.cookie_in_val = (char *)cookiein;
     args.cookie_in.cookie_in_len = cookieinlen;
@@ -7193,18 +7208,11 @@ remoteDomainMigratePrepareTunnel3Params(virConnectPtr dconn,
         goto cleanup;
     }
 
-    if (!(netst = virNetClientStreamNew(priv->remoteProgram,
-                                        REMOTE_PROC_DOMAIN_MIGRATE_PREPARE_TUNNEL3_PARAMS,
-                                        priv->counter)))
-        goto cleanup;
+    netst = virRemoteClientOpen(st, priv,
+                                REMOTE_PROC_DOMAIN_MIGRATE_PREPARE_TUNNEL3_PARAMS);
 
-    if (virNetClientAddStream(priv->client, netst) < 0) {
-        virObjectUnref(netst);
+    if (netst == NULL)
         goto cleanup;
-    }
-
-    st->driver = &remoteStreamDrv;
-    st->privateData = netst;
 
     if (call(dconn, priv, 0, REMOTE_PROC_DOMAIN_MIGRATE_PREPARE_TUNNEL3_PARAMS,
              (xdrproc_t) xdr_remote_domain_migrate_prepare_tunnel3_params_args,
