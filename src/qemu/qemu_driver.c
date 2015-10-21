@@ -12043,9 +12043,9 @@ qemuDomainMigratePrepareTunnel(virConnectPtr dconn,
     if (virDomainMigratePrepareTunnelEnsureACL(dconn, def) < 0)
         goto cleanup;
 
-    ret = qemuMigrationPrepareTunnel(driver, dconn,
-                                     NULL, 0, NULL, NULL, /* No cookies in v2 */
-                                     st, &def, origname, flags);
+    ret = qemuMigrationPrepareTunnels(driver, dconn,
+                                      NULL, 0, NULL, NULL, /* No cookies in v2 */
+                                      &st, 1, &def, origname, flags);
 
  cleanup:
     VIR_FREE(origname);
@@ -12450,10 +12450,10 @@ qemuDomainMigratePrepareTunnel3(virConnectPtr dconn,
     if (virDomainMigratePrepareTunnel3EnsureACL(dconn, def) < 0)
         goto cleanup;
 
-    ret = qemuMigrationPrepareTunnel(driver, dconn,
-                                     cookiein, cookieinlen,
-                                     cookieout, cookieoutlen,
-                                     st, &def, origname, flags);
+    ret = qemuMigrationPrepareTunnels(driver, dconn,
+                                      cookiein, cookieinlen,
+                                      cookieout, cookieoutlen,
+                                      &st, 1, &def, origname, flags);
 
  cleanup:
     VIR_FREE(origname);
@@ -12503,10 +12503,10 @@ qemuDomainMigratePrepareTunnel3Params(virConnectPtr dconn,
     if (virDomainMigratePrepareTunnels3ParamsEnsureACL(dconn, def) < 0)
         goto cleanup;
 
-    ret = qemuMigrationPrepareTunnel(driver, dconn,
-                                     cookiein, cookieinlen,
-                                     cookieout, cookieoutlen,
-                                     st, &def, origname, flags);
+    ret = qemuMigrationPrepareTunnels(driver, dconn,
+                                      cookiein, cookieinlen,
+                                      cookieout, cookieoutlen,
+                                      &st, 1, &def, origname, flags);
 
  cleanup:
     VIR_FREE(origname);

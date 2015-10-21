@@ -110,16 +110,17 @@ virDomainDefPtr qemuMigrationPrepareDef(virQEMUDriverPtr driver,
                                         const char *dname,
                                         char **origname);
 
-int qemuMigrationPrepareTunnel(virQEMUDriverPtr driver,
-                               virConnectPtr dconn,
-                               const char *cookiein,
-                               int cookieinlen,
-                               char **cookieout,
-                               int *cookieoutlen,
-                               virStreamPtr st,
-                               virDomainDefPtr *def,
-                               const char *origname,
-                               unsigned long flags);
+int qemuMigrationPrepareTunnels(virQEMUDriverPtr driver,
+                                virConnectPtr dconn,
+                                const char *cookiein,
+                                int cookieinlen,
+                                char **cookieout,
+                                int *cookieoutlen,
+                                virStreamPtr *sts,
+                                int nstreams,
+                                virDomainDefPtr *def,
+                                const char *origname,
+                                unsigned long flags);
 
 int qemuMigrationPrepareDirect(virQEMUDriverPtr driver,
                                virConnectPtr dconn,
