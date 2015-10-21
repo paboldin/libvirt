@@ -3201,7 +3201,8 @@ qemuMigrationPrepareAny(virQEMUDriverPtr driver,
                         int *cookieoutlen,
                         virDomainDefPtr *def,
                         const char *origname,
-                        virStreamPtr st,
+                        virStreamPtr *sts,
+                        int nstreams,
                         const char *protocol,
                         unsigned short port,
                         bool autoPort,
@@ -3216,7 +3217,7 @@ qemuMigrationPrepareAny(virQEMUDriverPtr driver,
     int dataFD[2] = { -1, -1 };
     qemuDomainObjPrivatePtr priv = NULL;
     qemuMigrationCookiePtr mig = NULL;
-    bool tunnel = !!st;
+    bool tunnel = !!nstreams;
     char *xmlout = NULL;
     unsigned int cookieFlags;
     virCapsPtr caps = NULL;
@@ -3433,7 +3434,7 @@ qemuMigrationPrepareAny(virQEMUDriverPtr driver,
     }
 
     if (tunnel) {
-        if (virFDStreamOpen(st, dataFD[1]) < 0) {
+        if (virFDStreamOpen(sts[0], dataFD[1]) < 0) {
             virReportSystemError(errno, "%s",
                                  _("cannot pass pipe for tunnelled migration"));
             goto stop;
@@ -3547,34 +3548,36 @@ qemuMigrationPrepareAny(virQEMUDriverPtr driver,
  * sets up the corresponding virStream to handle the incoming data.
  */
 int
-qemuMigrationPrepareTunnel(virQEMUDriverPtr driver,
-                           virConnectPtr dconn,
-                           const char *cookiein,
-                           int cookieinlen,
-                           char **cookieout,
-                           int *cookieoutlen,
-                           virStreamPtr st,
-                           virDomainDefPtr *def,
-                           const char *origname,
-                           unsigned long flags)
+qemuMigrationPrepareTunnels(virQEMUDriverPtr driver,
+                            virConnectPtr dconn,
+                            const char *cookiein,
+                            int cookieinlen,
+                            char **cookieout,
+                            int *cookieoutlen,
+                            virStreamPtr *sts,
+                            int nstreams,
+                            virDomainDefPtr *def,
+                            const char *origname,
+                            unsigned long flags)
 {
     int ret;
 
     VIR_DEBUG("driver=%p, dconn=%p, cookiein=%s, cookieinlen=%d, "
-              "cookieout=%p, cookieoutlen=%p, st=%p, def=%p, "
+              "cookieout=%p, cookieoutlen=%p, sts=%p, nstreams=%d, def=%p, "
               "origname=%s, flags=%lx",
               driver, dconn, NULLSTR(cookiein), cookieinlen,
-              cookieout, cookieoutlen, st, *def, origname, flags);
+              cookieout, cookieoutlen, sts, nstreams, *def, origname, flags);
 
-    if (st == NULL) {
+    if (!nstreams) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("tunnelled migration requested but NULL stream passed"));
+                       _("tunnelled migration requested but no streams passed"));
         return -1;
     }
 
     ret = qemuMigrationPrepareAny(driver, dconn, cookiein, cookieinlen,
                                   cookieout, cookieoutlen, def, origname,
-                                  st, NULL, 0, false, NULL, 0, NULL, flags);
+                                  sts, nstreams, NULL, 0, false, NULL, 0, NULL,
+                                  flags);
     return ret;
 }
 
@@ -3736,7 +3739,7 @@ qemuMigrationPrepareDirect(virQEMUDriverPtr driver,
 
     ret = qemuMigrationPrepareAny(driver, dconn, cookiein, cookieinlen,
                                   cookieout, cookieoutlen, def, origname,
-                                  NULL, uri ? uri->scheme : "tcp",
+                                  NULL, 0, uri ? uri->scheme : "tcp",
                                   port, autoPort, listenAddress,
                                   nmigrate_disks, migrate_disks, flags);
  cleanup:
