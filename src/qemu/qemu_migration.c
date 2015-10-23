@@ -4882,7 +4882,8 @@ doPeer2PeerMigrate3(virQEMUDriverPtr driver,
     int ret = -1;
     virErrorPtr orig_err = NULL;
     bool cancelled = true;
-    virStreamPtr st = NULL;
+    virStreamPtr *streams = NULL;
+    int nstreams = 0;
     unsigned long destflags;
     virTypedParameterPtr params = NULL;
     int nparams = 0;
@@ -4959,18 +4960,31 @@ doPeer2PeerMigrate3(virQEMUDriverPtr driver,
     cookieout = NULL;
     cookieoutlen = 0;
     if (flags & VIR_MIGRATE_TUNNELLED) {
-        if (!(st = virStreamNew(dconn, 0)))
+        qemuDomainObjEnterRemote(vm);
+
+        nstreams = 1 + nmigrate_disks;
+
+        if (VIR_ALLOC_N(streams, nstreams) < 0)
             goto cleanup;
 
-        qemuDomainObjEnterRemote(vm);
-        if (useParams) {
+        for (i = 0; i < nstreams; ++i) {
+            if (!(streams[i] = virStreamNew(dconn, 0)))
+                goto cleanup;
+        }
+
+        if (nmigrate_disks && useParams) {
+            ret = dconn->driver->domainMigratePrepareTunnels3Params
+                (dconn, streams, nstreams, params, nparams, cookiein,
+                 cookieinlen, &cookieout, &cookieoutlen, destflags);
+        }
+        else if (useParams) {
             ret = dconn->driver->domainMigratePrepareTunnel3Params
-                (dconn, st, params, nparams, cookiein, cookieinlen,
+                (dconn, streams[0], params, nparams, cookiein, cookieinlen,
                  &cookieout, &cookieoutlen, destflags);
         } else {
             ret = dconn->driver->domainMigratePrepareTunnel3
-                (dconn, st, cookiein, cookieinlen, &cookieout, &cookieoutlen,
-                 destflags, dname, bandwidth, dom_xml);
+                (dconn, streams[0], cookiein, cookieinlen, &cookieout,
+                 &cookieoutlen, destflags, dname, bandwidth, dom_xml);
         }
         qemuDomainObjExitRemote(vm);
     } else {
@@ -5026,7 +5040,7 @@ doPeer2PeerMigrate3(virQEMUDriverPtr driver,
     cookieout = NULL;
     cookieoutlen = 0;
     if (flags & VIR_MIGRATE_TUNNELLED) {
-        ret = doTunnelMigrate(driver, vm, st,
+        ret = doTunnelMigrate(driver, vm, streams[0],
                               cookiein, cookieinlen,
                               &cookieout, &cookieoutlen,
                               flags, bandwidth, dconn, graphicsuri,
@@ -5163,12 +5177,14 @@ doPeer2PeerMigrate3(virQEMUDriverPtr driver,
         ret = -1;
     }
 
-    virObjectUnref(st);
+    for (i = 0; i < nstreams; ++i)
+        virObjectUnref(streams[i]);
 
     if (orig_err) {
         virSetError(orig_err);
         virFreeError(orig_err);
     }
+    VIR_FREE(streams);
     VIR_FREE(uri_out);
     VIR_FREE(cookiein);
     VIR_FREE(cookieout);
