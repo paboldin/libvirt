@@ -3963,7 +3963,11 @@ struct _qemuMigrationSpec {
 
     enum qemuMigrationForwardType fwdType;
     union {
-        virStreamPtr stream;
+        struct {
+            virStreamPtr stream;
+            virStreamPtr *streams;
+            int nstreams;
+        } stream;
     } fwd;
 };
 
@@ -4612,7 +4616,8 @@ static int doNativeMigrate(virQEMUDriverPtr driver,
 
 static int doTunnelMigrate(virQEMUDriverPtr driver,
                            virDomainObjPtr vm,
-                           virStreamPtr st,
+                           virStreamPtr *streams,
+                           int nstreams,
                            const char *cookiein,
                            int cookieinlen,
                            char **cookieout,
@@ -4630,11 +4635,12 @@ static int doTunnelMigrate(virQEMUDriverPtr driver,
     qemuMigrationSpec spec;
     virQEMUDriverConfigPtr cfg = virQEMUDriverGetConfig(driver);
 
-    VIR_DEBUG("driver=%p, vm=%p, st=%p, cookiein=%s, cookieinlen=%d, "
-              "cookieout=%p, cookieoutlen=%p, flags=%lx, resource=%lu, "
-              "graphicsuri=%s, nmigrate_disks=%zu, migrate_disks=%p",
-              driver, vm, st, NULLSTR(cookiein), cookieinlen,
-              cookieout, cookieoutlen, flags, resource,
+    VIR_DEBUG("driver=%p, vm=%p, st=%p, streams=%p, nstreams=%d, "
+              "cookiein=%s, cookieinlen=%d, cookieout=%p, cookieoutlen=%p, "
+              "flags=%lx, resource=%lu, graphicsuri=%s, nmigrate_disks=%zu, "
+              "migrate_disks=%p",
+              driver, vm, streams[0], streams, nstreams, NULLSTR(cookiein),
+              cookieinlen, cookieout, cookieoutlen, flags, resource,
               NULLSTR(graphicsuri), nmigrate_disks, migrate_disks);
 
     if (!virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_MIGRATE_QEMU_FD) &&
@@ -4647,7 +4653,9 @@ static int doTunnelMigrate(virQEMUDriverPtr driver,
     }
 
     spec.fwdType = MIGRATION_FWD_STREAM;
-    spec.fwd.stream = st;
+    spec.fwd.stream.stream = streams[0];
+    spec.fwd.stream.streams = streams + 1;
+    spec.fwd.stream.nstreams = nstreams - 1;
 
     if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_MIGRATE_QEMU_FD)) {
         int fds[2];
@@ -4796,7 +4804,7 @@ static int doPeer2PeerMigrate2(virQEMUDriverPtr driver,
     VIR_DEBUG("Perform %p", sconn);
     qemuMigrationJobSetPhase(driver, vm, QEMU_MIGRATION_PHASE_PERFORM2);
     if (flags & VIR_MIGRATE_TUNNELLED)
-        ret = doTunnelMigrate(driver, vm, st,
+        ret = doTunnelMigrate(driver, vm, &st, 1,
                               NULL, 0, NULL, NULL,
                               flags, resource, dconn,
                               NULL, 0, NULL);
@@ -5040,7 +5048,7 @@ doPeer2PeerMigrate3(virQEMUDriverPtr driver,
     cookieout = NULL;
     cookieoutlen = 0;
     if (flags & VIR_MIGRATE_TUNNELLED) {
-        ret = doTunnelMigrate(driver, vm, streams[0],
+        ret = doTunnelMigrate(driver, vm, streams, nstreams,
                               cookiein, cookieinlen,
                               &cookieout, &cookieoutlen,
                               flags, bandwidth, dconn, graphicsuri,
