@@ -3979,6 +3979,8 @@ struct _qemuMigrationIOThread {
     virThread thread;
     virStreamPtr qemuStream;
     int qemuSock;
+    virStreamPtr *streams;
+    int nstreams;
     virError err;
     int wakeupRecvFD;
     int wakeupSendFD;
@@ -3990,10 +3992,11 @@ qemuMigrationIOFunc(void *arg)
     qemuMigrationIOThreadPtr data = arg;
     char *buffer = NULL;
     struct pollfd fds[2];
-    int timeout = -1;
+    int timeout = -1, i;
     virErrorPtr err = NULL;
 
-    VIR_DEBUG("Running migration tunnel; qemuStream=%p", data->qemuStream);
+    VIR_DEBUG("Running migration tunnel; qemuStream=%p, streams=%p, nstreams=%d",
+              data->qemuStream, data->streams, data->nstreams);
 
     if (VIR_ALLOC_N(buffer, TUNNEL_SEND_BUF_SIZE) < 0)
         goto abrt;
@@ -4067,6 +4070,9 @@ qemuMigrationIOFunc(void *arg)
     }
 
     virStreamFinish(data->qemuStream);
+    for (i = 0; i < data->nstreams; ++i) {
+        virStreamFinish(data->streams[i]);
+    }
 
     VIR_FORCE_CLOSE(data->qemuSock);
     VIR_FREE(buffer);
@@ -4080,6 +4086,9 @@ qemuMigrationIOFunc(void *arg)
         err = NULL;
     }
     virStreamAbort(data->qemuStream);
+    for (i = 0; i < data->nstreams; ++i) {
+        virStreamAbort(data->streams[i]);
+    }
     if (err) {
         virSetError(err);
         virFreeError(err);
@@ -4097,7 +4106,9 @@ qemuMigrationIOFunc(void *arg)
 
 
 static qemuMigrationIOThreadPtr
-qemuMigrationStartTunnel(virStreamPtr qemuStream)
+qemuMigrationStartTunnel(virStreamPtr qemuStream,
+                         virStreamPtr *streams,
+                         int nstreams)
 {
     qemuMigrationIOThreadPtr io = NULL;
     int wakeupFD[2] = { -1, -1 };
@@ -4113,6 +4124,8 @@ qemuMigrationStartTunnel(virStreamPtr qemuStream)
 
     io->qemuStream = qemuStream;
     io->qemuSock = -1;
+    io->streams = streams;
+    io->nstreams = nstreams;
     io->wakeupRecvFD = wakeupFD[0];
     io->wakeupSendFD = wakeupFD[1];
 
@@ -4434,7 +4447,9 @@ qemuMigrationRun(virQEMUDriverPtr driver,
     }
 
     if (spec->fwdType != MIGRATION_FWD_DIRECT) {
-        if (!(iothread = qemuMigrationStartTunnel(spec->fwd.stream)))
+        if (!(iothread = qemuMigrationStartTunnel(spec->fwd.stream.stream,
+                                                  spec->fwd.stream.streams,
+                                                  spec->fwd.stream.nstreams)))
             goto cancel;
 
         if (qemuMigrationSetQEMUSocket(iothread, fd) < 0)
