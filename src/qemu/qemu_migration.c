@@ -3993,6 +3993,7 @@ struct _qemuMigrationIOThread {
     virThread thread;
     virStreamPtr qemuStream;
     int qemuSock;
+    int unixSock;
     virError err;
     int wakeupRecvFD;
     int wakeupSendFD;
@@ -4003,7 +4004,7 @@ qemuMigrationIOFunc(void *arg)
 {
     qemuMigrationIOThreadPtr data = arg;
     char *buffer = NULL;
-    struct pollfd fds[2];
+    struct pollfd fds[3];
     int timeout = -1;
     virErrorPtr err = NULL;
 
@@ -4013,8 +4014,8 @@ qemuMigrationIOFunc(void *arg)
         goto abrt;
 
     fds[0].fd = data->wakeupRecvFD;
-    fds[1].fd = -1;
-    fds[0].events = fds[1].events = POLLIN;
+    fds[1].fd = fds[2].fd = -1;
+    fds[0].events = fds[1].events = fds[2].events = POLLIN;
 
     for (;;) {
         int ret;
@@ -4057,7 +4058,9 @@ qemuMigrationIOFunc(void *arg)
                     break;
                 case 'u':
                     fds[1].fd = data->qemuSock;
-                    VIR_DEBUG("qemuSock set %d", data->qemuSock);
+                    fds[2].fd = data->unixSock;
+                    VIR_DEBUG("qemuSock set %d, unixSock set %d",
+                              data->qemuSock, data->unixSock);
                     break;
             }
         }
@@ -4126,7 +4129,7 @@ qemuMigrationStartTunnel(virStreamPtr qemuStream)
         goto error;
 
     io->qemuStream = qemuStream;
-    io->qemuSock = -1;
+    io->qemuSock = io->unixSock = -1;
     io->wakeupRecvFD = wakeupFD[0];
     io->wakeupSendFD = wakeupFD[1];
 
@@ -4188,6 +4191,26 @@ qemuMigrationSetQEMUSocket(qemuMigrationIOThreadPtr io, int sock)
     char action = 'u';
 
     io->qemuSock = sock;
+
+    if (safewrite(io->wakeupSendFD, &action, 1) != 1) {
+        virReportSystemError(errno, "%s",
+                             _("failed to update migration tunnel"));
+        goto error;
+    }
+
+    rv = 0;
+
+ error:
+    return rv;
+}
+
+static int
+qemuMigrationSetUnixSocket(qemuMigrationIOThreadPtr io, int sock)
+{
+    int rv = -1;
+    char action = 'u';
+
+    io->unixSock = sock;
 
     if (safewrite(io->wakeupSendFD, &action, 1) != 1) {
         virReportSystemError(errno, "%s",
@@ -4312,6 +4335,16 @@ qemuMigrationRun(virQEMUDriverPtr driver,
 
     if (qemuDomainMigrateGraphicsRelocate(driver, vm, mig, graphicsuri) < 0)
         VIR_WARN("unable to provide data for graphics client relocation");
+
+    if (spec->fwdType != MIGRATION_FWD_DIRECT) {
+        if (!(iothread = qemuMigrationStartTunnel(spec->fwd.stream)))
+            goto cancel;
+
+        if (nmigrate_disks &&
+            qemuMigrationSetUnixSocket(iothread,
+                                       spec->nbd_tunnel_unix_socket.sock) < 0)
+            goto cancel;
+    }
 
     if (migrate_flags & (QEMU_MONITOR_MIGRATE_NON_SHARED_DISK |
                          QEMU_MONITOR_MIGRATE_NON_SHARED_INC)) {
@@ -4444,9 +4477,6 @@ qemuMigrationRun(virQEMUDriverPtr driver,
     }
 
     if (spec->fwdType != MIGRATION_FWD_DIRECT) {
-        if (!(iothread = qemuMigrationStartTunnel(spec->fwd.stream)))
-            goto cancel;
-
         if (qemuMigrationSetQEMUSocket(iothread, fd) < 0)
             goto cancel;
         /* If we've created a tunnel, then the 'fd' will be closed in the
