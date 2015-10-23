@@ -3979,6 +3979,7 @@ struct _qemuMigrationIOThread {
     virThread thread;
     virStreamPtr qemuStream;
     int qemuSock;
+    int unixSock;
     virStreamPtr *streams;
     int nstreams;
     virError err;
@@ -3991,7 +3992,7 @@ qemuMigrationIOFunc(void *arg)
 {
     qemuMigrationIOThreadPtr data = arg;
     char *buffer = NULL;
-    struct pollfd fds[2];
+    struct pollfd fds[3];
     int timeout = -1, i;
     virErrorPtr err = NULL;
 
@@ -4002,8 +4003,8 @@ qemuMigrationIOFunc(void *arg)
         goto abrt;
 
     fds[0].fd = data->wakeupRecvFD;
-    fds[1].fd = -1;
-    fds[0].events = fds[1].events = POLLIN;
+    fds[1].fd = fds[2].fd = -1;
+    fds[0].events = fds[1].events = fds[2].events = POLLIN;
 
     for (;;) {
         int ret;
@@ -4046,7 +4047,9 @@ qemuMigrationIOFunc(void *arg)
                     break;
                 case 'u':
                     fds[1].fd = data->qemuSock;
-                    VIR_DEBUG("qemuSock set %d", data->qemuSock);
+                    fds[2].fd = data->unixSock;
+                    VIR_DEBUG("qemuSock set %d, unixSock set %d",
+                              data->qemuSock, data->unixSock);
                     break;
             }
         }
@@ -4075,6 +4078,7 @@ qemuMigrationIOFunc(void *arg)
     }
 
     VIR_FORCE_CLOSE(data->qemuSock);
+    VIR_FORCE_CLOSE(data->unixSock);
     VIR_FREE(buffer);
 
     return;
@@ -4098,6 +4102,7 @@ qemuMigrationIOFunc(void *arg)
     /* Let the source qemu know that the transfer cant continue anymore.
      * Don't copy the error for EPIPE as destination has the actual error. */
     VIR_FORCE_CLOSE(data->qemuSock);
+    VIR_FORCE_CLOSE(data->unixSock);
     if (!virLastErrorIsSystemErrno(EPIPE))
         virCopyLastError(&data->err);
     virResetLastError();
@@ -4123,7 +4128,7 @@ qemuMigrationStartTunnel(virStreamPtr qemuStream,
         goto error;
 
     io->qemuStream = qemuStream;
-    io->qemuSock = -1;
+    io->qemuSock = io->unixSock = -1;
     io->streams = streams;
     io->nstreams = nstreams;
     io->wakeupRecvFD = wakeupFD[0];
@@ -4187,6 +4192,26 @@ qemuMigrationSetQEMUSocket(qemuMigrationIOThreadPtr io, int sock)
     char action = 'u';
 
     io->qemuSock = sock;
+
+    if (safewrite(io->wakeupSendFD, &action, 1) != 1) {
+        virReportSystemError(errno, "%s",
+                             _("failed to update migration tunnel"));
+        goto error;
+    }
+
+    rv = 0;
+
+ error:
+    return rv;
+}
+
+static int
+qemuMigrationSetUnixSocket(qemuMigrationIOThreadPtr io, int sock)
+{
+    int rv = -1;
+    char action = 'u';
+
+    io->unixSock = sock;
 
     if (safewrite(io->wakeupSendFD, &action, 1) != 1) {
         virReportSystemError(errno, "%s",
