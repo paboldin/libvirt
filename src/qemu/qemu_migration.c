@@ -3969,6 +3969,11 @@ struct _qemuMigrationSpec {
             int nstreams;
         } stream;
     } fwd;
+
+    struct {
+        char *file;
+        int sock;
+    } nbd_tunnel_unix_socket;
 };
 
 #define TUNNEL_SEND_BUF_SIZE 65536
@@ -4835,7 +4840,7 @@ static int doTunnelMigrate(virQEMUDriverPtr driver,
                            const char **migrate_disks)
 {
     qemuDomainObjPrivatePtr priv = vm->privateData;
-    virNetSocketPtr sock = NULL;
+    virNetSocketPtr sock = NULL, nbdSock = NULL;
     int ret = -1;
     qemuMigrationSpec spec;
     virQEMUDriverConfigPtr cfg = virQEMUDriverGetConfig(driver);
@@ -4861,6 +4866,25 @@ static int doTunnelMigrate(virQEMUDriverPtr driver,
     spec.fwd.stream.stream = streams[0];
     spec.fwd.stream.streams = streams + 1;
     spec.fwd.stream.nstreams = nstreams - 1;
+
+    /* We have NBD tunnels open here */
+    if (nstreams > 1) {
+        spec.nbd_tunnel_unix_socket.sock = -1;
+        spec.nbd_tunnel_unix_socket.file = NULL;
+
+        if (virAsprintf(&spec.nbd_tunnel_unix_socket.file,
+                        "%s/qemu.nbdtunnelmigrate.src.%s",
+                        cfg->libDir, vm->def->name) < 0)
+            goto cleanup;
+
+        if (virNetSocketNewListenUNIX(spec.nbd_tunnel_unix_socket.file, 0700,
+                                      cfg->user, cfg->group,
+                                      &nbdSock) < 0 ||
+            virNetSocketListen(nbdSock, 1) < 0)
+            goto cleanup;
+
+        spec.nbd_tunnel_unix_socket.sock = virNetSocketGetFD(nbdSock);
+    }
 
     if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_MIGRATE_QEMU_FD)) {
         int fds[2];
@@ -4910,6 +4934,11 @@ static int doTunnelMigrate(virQEMUDriverPtr driver,
     } else {
         virObjectUnref(sock);
         VIR_FREE(spec.dest.unix_socket.file);
+    }
+
+    if (nstreams > 1) {
+        virObjectUnref(nbdSock);
+        VIR_FREE(spec.nbd_tunnel_unix_socket.file);
     }
 
     virObjectUnref(cfg);
