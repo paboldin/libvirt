@@ -441,6 +441,8 @@ char *qemuMonitorJSONGetTargetArch(qemuMonitorPtr mon);
 int qemuMonitorJSONNBDServerStart(qemuMonitorPtr mon,
                                   const char *host,
                                   unsigned int port);
+int qemuMonitorJSONNBDServerStartUnix(qemuMonitorPtr mon,
+                                      const char *path);
 int qemuMonitorJSONNBDServerAdd(qemuMonitorPtr mon,
                                 const char *deviceID,
                                 bool writable);

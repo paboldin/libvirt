@@ -5749,6 +5749,41 @@ qemuMonitorJSONNBDServerStart(qemuMonitorPtr mon,
 }
 
 int
+qemuMonitorJSONNBDServerStartUnix(qemuMonitorPtr mon,
+                                  const char *file)
+{
+    int ret = -1;
+    virJSONValuePtr cmd = NULL;
+    virJSONValuePtr reply = NULL;
+    virJSONValuePtr addr = NULL;
+
+    if (!(addr = qemuMonitorJSONBuildUnixSocketAddress(file)))
+        return ret;
+
+    if (!(cmd = qemuMonitorJSONMakeCommand("nbd-server-start",
+                                           "a:addr", addr,
+                                           NULL)))
+        goto cleanup;
+
+    /* From now on, @addr is part of @cmd */
+    addr = NULL;
+
+    if (qemuMonitorJSONCommand(mon, cmd, &reply) < 0)
+        goto cleanup;
+
+    if (qemuMonitorJSONCheckError(cmd, reply) < 0)
+        goto cleanup;
+
+    ret = 0;
+
+ cleanup:
+    virJSONValueFree(reply);
+    virJSONValueFree(cmd);
+    virJSONValueFree(addr);
+    return ret;
+}
+
+int
 qemuMonitorJSONNBDServerAdd(qemuMonitorPtr mon,
                             const char *deviceID,
                             bool writable)

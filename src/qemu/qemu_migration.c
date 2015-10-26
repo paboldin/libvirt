@@ -1744,6 +1744,7 @@ static int
 qemuMigrationStartNBDServer(virQEMUDriverPtr driver,
                             virDomainObjPtr vm,
                             const char *listenAddr,
+                            char **tunnelName,
                             size_t nmigrate_disks,
                             const char **migrate_disks)
 {
@@ -1752,6 +1753,7 @@ qemuMigrationStartNBDServer(virQEMUDriverPtr driver,
     unsigned short port = 0;
     char *diskAlias = NULL;
     size_t i;
+    virQEMUDriverConfigPtr cfg = virQEMUDriverGetConfig(driver);
 
     for (i = 0; i < vm->def->ndisks; i++) {
         virDomainDiskDefPtr disk = vm->def->disks[i];
@@ -1769,10 +1771,18 @@ qemuMigrationStartNBDServer(virQEMUDriverPtr driver,
                                            QEMU_ASYNC_JOB_MIGRATION_IN) < 0)
             goto cleanup;
 
-        if (!port &&
+        if (listenAddr && !port &&
             ((virPortAllocatorAcquire(driver->migrationPorts, &port) < 0) ||
              (qemuMonitorNBDServerStart(priv->mon, listenAddr, port) < 0))) {
             goto exit_monitor;
+        }
+
+        if (tunnelName && !*tunnelName &&
+            ((virAsprintf(tunnelName,
+                          "%s/qemu.nbdtunnelmigrate.src.%s",
+                          cfg->libDir, vm->def->name) < 0) ||
+             (qemuMonitorNBDServerStartUnix(priv->mon, *tunnelName) < 0))) {
+                goto exit_monitor;
         }
 
         if (qemuMonitorNBDServerAdd(priv->mon, diskAlias, true) < 0)
@@ -1785,6 +1795,7 @@ qemuMigrationStartNBDServer(virQEMUDriverPtr driver,
     ret = 0;
 
  cleanup:
+    virObjectUnref(cfg);
     VIR_FREE(diskAlias);
     if (ret < 0)
         virPortAllocatorRelease(driver->migrationPorts, port);
@@ -2106,7 +2117,7 @@ qemuMigrationDriveMirror(virQEMUDriverPtr driver,
 {
     qemuDomainObjPrivatePtr priv = vm->privateData;
     int ret = -1;
-    int port;
+    int port = -1;
     size_t i;
     char *diskAlias = NULL;
     char *nbd_dest = NULL;
@@ -3277,7 +3288,7 @@ qemuMigrationPrepareAny(virQEMUDriverPtr driver,
 {
     virDomainObjPtr vm = NULL;
     virObjectEventPtr event = NULL;
-    int ret = -1;
+    int ret = -1, i;
     int dataFD[2] = { -1, -1 };
     qemuDomainObjPrivatePtr priv = NULL;
     qemuMigrationCookiePtr mig = NULL;
@@ -3286,6 +3297,7 @@ qemuMigrationPrepareAny(virQEMUDriverPtr driver,
     unsigned int cookieFlags;
     virCapsPtr caps = NULL;
     char *migrateFrom = NULL;
+    char *tunnelName = NULL;
     bool taint_hook = false;
 
     virNWFilterReadLockFilterUpdates();
@@ -3539,9 +3551,15 @@ qemuMigrationPrepareAny(virQEMUDriverPtr driver,
     if (mig->nbd &&
         flags & (VIR_MIGRATE_NON_SHARED_DISK | VIR_MIGRATE_NON_SHARED_INC) &&
         virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_NBD_SERVER)) {
-        if (qemuMigrationStartNBDServer(driver, vm, listenAddress,
-                                        nmigrate_disks, migrate_disks) < 0) {
+        if (!tunnel && qemuMigrationStartNBDServer(
+                        driver, vm, listenAddress, NULL,
+                        nmigrate_disks, migrate_disks) < 0) {
             /* error already reported */
+            goto endjob;
+        }
+        if (tunnel && qemuMigrationStartNBDServer(
+                        driver, vm, NULL, &tunnelName,
+                        nmigrate_disks, migrate_disks) < 0) {
             goto endjob;
         }
         cookieFlags |= QEMU_MIGRATION_COOKIE_NBD;
@@ -3564,6 +3582,14 @@ qemuMigrationPrepareAny(virQEMUDriverPtr driver,
         event = virDomainEventLifecycleNewFromObj(vm,
                                          VIR_DOMAIN_EVENT_STARTED,
                                          VIR_DOMAIN_EVENT_STARTED_MIGRATED);
+    }
+
+    if (tunnel) {
+        /* XXX This call blocks QEMU in handshake */
+        for (i = 1; i < nstreams; ++i) {
+            if (virFDStreamConnectUNIX(sts[i], tunnelName, false) < 0)
+                goto endjob;
+        }
     }
 
     /* We keep the job active across API calls until the finish() call.
@@ -4522,6 +4548,18 @@ qemuMigrationRun(virQEMUDriverPtr driver,
     if (qemuDomainMigrateGraphicsRelocate(driver, vm, mig, graphicsuri) < 0)
         VIR_WARN("unable to provide data for graphics client relocation");
 
+    if (spec->fwdType != MIGRATION_FWD_DIRECT) {
+        if (!(iothread = qemuMigrationStartTunnel(spec->fwd.stream.stream,
+                                                  spec->fwd.stream.streams,
+                                                  spec->fwd.stream.nstreams)))
+            goto cancel;
+
+        if (spec->fwd.stream.nstreams &&
+            qemuMigrationSetUnixSocket(iothread,
+                                       spec->nbd_tunnel_unix_socket.sock) < 0)
+            goto cancel;
+    }
+
     if (migrate_flags & (QEMU_MONITOR_MIGRATE_NON_SHARED_DISK |
                          QEMU_MONITOR_MIGRATE_NON_SHARED_INC)) {
         if (mig->nbd) {
@@ -4657,11 +4695,6 @@ qemuMigrationRun(virQEMUDriverPtr driver,
     }
 
     if (spec->fwdType != MIGRATION_FWD_DIRECT) {
-        if (!(iothread = qemuMigrationStartTunnel(spec->fwd.stream.stream,
-                                                  spec->fwd.stream.streams,
-                                                  spec->fwd.stream.nstreams)))
-            goto cancel;
-
         if (qemuMigrationSetQEMUSocket(iothread, fd) < 0)
             goto cancel;
         /* If we've created a tunnel, then the 'fd' will be closed in the
