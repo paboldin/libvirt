@@ -191,6 +191,56 @@ struct _qemuMigrationCookie {
     qemuDomainJobInfoPtr jobInfo;
 };
 
+enum qemuMigrationDestinationType {
+    MIGRATION_DEST_HOST,
+    MIGRATION_DEST_CONNECT_HOST,
+    MIGRATION_DEST_UNIX,
+    MIGRATION_DEST_FD,
+};
+
+enum qemuMigrationForwardType {
+    MIGRATION_FWD_DIRECT,
+    MIGRATION_FWD_STREAM,
+};
+
+typedef struct _qemuMigrationSpec qemuMigrationSpec;
+typedef qemuMigrationSpec *qemuMigrationSpecPtr;
+struct _qemuMigrationSpec {
+    enum qemuMigrationDestinationType destType;
+    union {
+        struct {
+            const char *protocol;
+            const char *name;
+            int port;
+        } host;
+
+        struct {
+            char *file;
+            int sock;
+        } unix_socket;
+
+        struct {
+            int qemu;
+            int local;
+        } fd;
+    } dest;
+
+    enum qemuMigrationForwardType fwdType;
+    union {
+        struct {
+            virStreamPtr stream;
+            virStreamPtr *streams;
+            int nstreams;
+        } stream;
+    } fwd;
+
+    struct {
+        char *file;
+        int sock;
+    } nbd_tunnel_unix_socket;
+};
+
+
 static void qemuMigrationCookieGraphicsFree(qemuMigrationCookieGraphicsPtr grap)
 {
     if (!grap)
@@ -3926,55 +3976,6 @@ qemuMigrationConfirm(virConnectPtr conn,
     return ret;
 }
 
-
-enum qemuMigrationDestinationType {
-    MIGRATION_DEST_HOST,
-    MIGRATION_DEST_CONNECT_HOST,
-    MIGRATION_DEST_UNIX,
-    MIGRATION_DEST_FD,
-};
-
-enum qemuMigrationForwardType {
-    MIGRATION_FWD_DIRECT,
-    MIGRATION_FWD_STREAM,
-};
-
-typedef struct _qemuMigrationSpec qemuMigrationSpec;
-typedef qemuMigrationSpec *qemuMigrationSpecPtr;
-struct _qemuMigrationSpec {
-    enum qemuMigrationDestinationType destType;
-    union {
-        struct {
-            const char *protocol;
-            const char *name;
-            int port;
-        } host;
-
-        struct {
-            char *file;
-            int sock;
-        } unix_socket;
-
-        struct {
-            int qemu;
-            int local;
-        } fd;
-    } dest;
-
-    enum qemuMigrationForwardType fwdType;
-    union {
-        struct {
-            virStreamPtr stream;
-            virStreamPtr *streams;
-            int nstreams;
-        } stream;
-    } fwd;
-
-    struct {
-        char *file;
-        int sock;
-    } nbd_tunnel_unix_socket;
-};
 
 #define TUNNEL_SEND_BUF_SIZE 65536
 
