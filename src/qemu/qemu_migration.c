@@ -4597,7 +4597,7 @@ static int doTunnelMigrate(virQEMUDriverPtr driver,
                            size_t nmigrate_disks,
                            const char **migrate_disks)
 {
-    virNetSocketPtr sock = NULL;
+    virNetSocketPtr sock = NULL, nbdSock = NULL;
     int ret = -1;
     qemuMigrationSpec spec;
     virQEMUDriverConfigPtr cfg = virQEMUDriverGetConfig(driver);
@@ -4613,6 +4613,23 @@ static int doTunnelMigrate(virQEMUDriverPtr driver,
     spec.fwdType = MIGRATION_FWD_STREAM;
     spec.fwd.stream = st;
 
+    if (nmigrate_disks) {
+        spec.nbd_tunnel_unix_socket.sock = -1;
+        spec.nbd_tunnel_unix_socket.file = NULL;
+
+        if (virAsprintf(&spec.nbd_tunnel_unix_socket.file,
+                        "%s/domain-%s/qemu.nbdtunnelmigrate.src",
+                        cfg->libDir, vm->def->name) < 0)
+            goto cleanup;
+
+        if (virNetSocketNewListenUNIX(spec.nbd_tunnel_unix_socket.file, 0700,
+                                      cfg->user, cfg->group,
+                                      &nbdSock) < 0 ||
+            virNetSocketListen(nbdSock, 1) < 0)
+            goto cleanup;
+
+        spec.nbd_tunnel_unix_socket.sock = virNetSocketGetFD(nbdSock);
+    }
 
     spec.destType = MIGRATION_DEST_FD;
     spec.dest.fd.qemu = -1;
@@ -4641,6 +4658,11 @@ static int doTunnelMigrate(virQEMUDriverPtr driver,
     } else {
         virObjectUnref(sock);
         VIR_FREE(spec.dest.unix_socket.file);
+    }
+
+    if (nmigrate_disks) {
+        virObjectUnref(nbdSock);
+        VIR_FREE(spec.nbd_tunnel_unix_socket.file);
     }
 
     virObjectUnref(cfg);
