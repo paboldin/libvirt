@@ -3989,6 +3989,144 @@ struct _qemuMigrationIOThread {
     int wakeupSendFD;
 };
 
+#define GET_FLAG(x) ((x) & \
+                     (VIR_STREAM_EVENT_READABLE|VIR_STREAM_EVENT_WRITABLE))
+/* FIXME use constants and introduce shift here */
+#define FD_TO_NET   ((1 << 2) | (1 << 1))
+#define NET_TO_FD   ((1 << 3) | (1 << 0))
+
+static void
+qemuIOThreadStreamEvent(virStreamPtr st, int events, void *opaque)
+{
+    qemuMigrationIOThreadPtr data = opaque;
+    char flag = GET_FLAG(events);
+    int idx;
+
+    /* TODO probably introduce a
+        struct {
+            virStreamPtr stream, fdStream;
+            char flags;
+        }
+        and keep per-pair events details there.
+     */
+    for (idx = 0; idx < data->nstreams; ++idx) {
+        if (data->streams[idx] == st)
+            break;
+    }
+
+    if (idx == data->nstreams) {
+        for (idx = 0; idx < data->nstreams; ++idx) {
+            if (data->fdStreams[idx] == st)
+                break;
+        }
+
+        if (idx == data->nstreams)
+            return;
+
+        flag <<= 2;
+    }
+
+    flag |= data->flags[idx];
+
+    while ((flag & NET_TO_FD) == NET_TO_FD || (flag & FD_TO_NET) == FD_TO_NET) {
+        int got, offset = 0;
+        char *bytes;
+
+        virStreamPtr from, to;
+
+        if (flag & NET_TO_FD) {
+            flag &= ~NET_TO_FD;
+            from = data->streams[idx];
+            to = data->fdStreams[idx];
+        } else if (flag & FD_TO_NET) {
+            flag &= ~FD_TO_NET;
+            from = data->fdStreams[idx];
+            to = data->streams[idx];
+        }
+
+        if (VIR_ALLOC_N(bytes, TUNNEL_SEND_BUF_SIZE) < 0)
+            return;
+
+        got = virStreamRecv(from, bytes, TUNNEL_SEND_BUF_SIZE);
+
+        while (offset < got) {
+            int done;
+            done = virStreamSend(to, bytes + offset, got - offset);
+            if (done < 0)
+                break;
+            offset += done;
+        }
+
+        VIR_FREE(bytes);
+    }
+
+    data->flags[idx] = flag;
+}
+
+static int
+qemuNBDAcceptAndTunnel(qemuMigrationIOThreadPtr data)
+{
+    /* TODO make it a generic stream-piping mechanism? */
+    virStreamPtr newst = NULL;
+    int fd, i;
+
+    while ((fd = accept(data->unixSock, NULL, NULL)) < 0) {
+        if (errno == EAGAIN || errno == EINTR)
+            continue;
+        virReportSystemError(
+            errno, "%s", _("failed to accept connection from qemu"));
+        goto abrt;
+    }
+
+    for (i = 0; i < data->nstreams; ++i)
+        if (data->fdStreams[i] == NULL)
+            break;
+
+    if (i == data->nstreams) {
+        virReportSystemError(
+            errno, "%s", _("too much connections from qemu"));
+        goto abrt;
+    }
+
+    if (!(newst = virStreamNew(data->streams[i]->conn, 0))) {
+        virReportSystemError(
+            errno, "%s", _("unable to create stream"));
+        goto abrt;
+    }
+
+    if (virFDStreamOpen(newst, fd) < 0) {
+        virStreamFree(newst);
+        virReportSystemError(
+            errno, "%s", _("unable to create assign an fd to stream"));
+        goto abrt;
+    }
+
+    if (virStreamEventAddCallback(newst,
+                                  VIR_STREAM_EVENT_READABLE |
+                                  VIR_STREAM_EVENT_WRITABLE,
+                                  qemuIOThreadStreamEvent, data,
+                                  NULL) < 0)
+        goto abrt;
+
+    if (virStreamEventAddCallback(data->streams[i],
+                                  VIR_STREAM_EVENT_READABLE |
+                                  VIR_STREAM_EVENT_WRITABLE,
+                                  qemuIOThreadStreamEvent, data,
+                                  NULL) < 0)
+        goto abrt;
+
+    data->fdStreams[i] = newst;
+
+    return 0;
+
+ abrt:
+    VIR_FORCE_CLOSE(fd);
+    if (newst)
+        virStreamAbort(newst);
+    virObjectUnref(newst);
+    return -1;
+}
+
 static void
 qemuMigrationIOFunc(void *arg)
 {
@@ -4072,11 +4210,22 @@ qemuMigrationIOFunc(void *arg)
                 break;
             }
         }
+
+        if (fds[2].revents & (POLLIN | POLLERR | POLLHUP)) {
+            if (qemuNBDAcceptAndTunnel(data) < 0)
+                goto abrt;
+        }
     }
 
     virStreamFinish(data->qemuStream);
     for (i = 0; i < data->nstreams; ++i) {
+        virStreamEventUpdateCallback(data->streams[i], 0);
         virStreamFinish(data->streams[i]);
+
+        if (data->fdStreams[i]) {
+            virStreamEventUpdateCallback(data->fdStreams[i], 0);
+            virStreamFinish(data->fdStreams[i]);
+        }
     }
 
     VIR_FORCE_CLOSE(data->qemuSock);
@@ -4093,7 +4242,13 @@ qemuMigrationIOFunc(void *arg)
     }
     virStreamAbort(data->qemuStream);
     for (i = 0; i < data->nstreams; ++i) {
+        virStreamEventUpdateCallback(data->streams[i], 0);
         virStreamAbort(data->streams[i]);
+
+        if (data->fdStreams[i]) {
+            virStreamEventUpdateCallback(data->fdStreams[i], 0);
+            virStreamAbort(data->fdStreams[i]);
+        }
     }
     if (err) {
         virSetError(err);
@@ -5026,7 +5181,8 @@ doPeer2PeerMigrate3(virQEMUDriverPtr driver,
             goto cleanup;
 
         for (i = 0; i < nstreams; ++i) {
-            if (!(streams[i] = virStreamNew(dconn, 0)))
+            if (!(streams[i] = virStreamNew(dconn,
+                                            i ? VIR_STREAM_NONBLOCK : 0)))
                 goto cleanup;
         }
 
