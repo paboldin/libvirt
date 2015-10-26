@@ -2097,7 +2097,7 @@ static int
 qemuMigrationDriveMirror(virQEMUDriverPtr driver,
                          virDomainObjPtr vm,
                          qemuMigrationCookiePtr mig,
-                         const char *host,
+                         qemuMigrationSpecPtr spec,
                          unsigned long speed,
                          unsigned int *migrate_flags,
                          size_t nmigrate_disks,
@@ -2117,15 +2117,21 @@ qemuMigrationDriveMirror(virQEMUDriverPtr driver,
 
     VIR_DEBUG("Starting drive mirrors for domain %s", vm->def->name);
 
-    /* steal NBD port and thus prevent its propagation back to destination */
-    port = mig->nbd->port;
-    mig->nbd->port = 0;
+    if (spec->destType == MIGRATION_DEST_HOST) {
+        const char *host = spec->dest.host.name;
+        /* steal NBD port and thus prevent its propagation back to destination */
+        port = mig->nbd->port;
+        mig->nbd->port = 0;
 
-    /* escape literal IPv6 address */
-    if (strchr(host, ':')) {
-        if (virAsprintf(&hoststr, "[%s]", host) < 0)
+        /* escape literal IPv6 address */
+        if (strchr(host, ':')) {
+            if (virAsprintf(&hoststr, "[%s]", host) < 0)
+                goto cleanup;
+        } else if (VIR_STRDUP(hoststr, host) < 0) {
             goto cleanup;
-    } else if (VIR_STRDUP(hoststr, host) < 0) {
+        }
+    }
+    else if (!spec->nbd_tunnel_unix_socket.file) {
         goto cleanup;
     }
 
@@ -2141,11 +2147,19 @@ qemuMigrationDriveMirror(virQEMUDriverPtr driver,
         if (!qemuMigrateDisk(disk, nmigrate_disks, migrate_disks))
             continue;
 
-        if ((virAsprintf(&diskAlias, "%s%s",
-                         QEMU_DRIVE_HOST_PREFIX, disk->info.alias) < 0) ||
-            (virAsprintf(&nbd_dest, "nbd:%s:%d:exportname=%s",
-                         hoststr, port, diskAlias) < 0))
+        if (virAsprintf(&diskAlias, "%s%s",
+                        QEMU_DRIVE_HOST_PREFIX, disk->info.alias) < 0)
             goto cleanup;
+        if (spec->destType == MIGRATION_DEST_HOST) {
+            if (virAsprintf(&nbd_dest, "nbd:%s:%d:exportname=%s",
+                            hoststr, port, diskAlias) < 0)
+                goto cleanup;
+        } else {
+            if (virAsprintf(&nbd_dest, "nbd:unix:%s:exportname=%s",
+                            spec->nbd_tunnel_unix_socket.file,
+                            diskAlias) < 0)
+                goto cleanup;
+        }
 
         if (qemuDomainObjEnterMonitorAsync(driver, vm,
                                            QEMU_ASYNC_JOB_MIGRATION_OUT) < 0)
@@ -4513,7 +4527,7 @@ qemuMigrationRun(virQEMUDriverPtr driver,
         if (mig->nbd) {
             /* This will update migrate_flags on success */
             if (qemuMigrationDriveMirror(driver, vm, mig,
-                                         spec->dest.host.name,
+                                         spec,
                                          migrate_speed,
                                          &migrate_flags,
                                          nmigrate_disks,
