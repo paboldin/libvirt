@@ -3981,7 +3981,9 @@ struct _qemuMigrationIOThread {
     int qemuSock;
     int unixSock;
     virStreamPtr *streams;
+    virStreamPtr *fdStreams;
     int nstreams;
+    char *flags;
     virError err;
     int wakeupRecvFD;
     int wakeupSendFD;
@@ -4131,6 +4133,12 @@ qemuMigrationStartTunnel(virStreamPtr qemuStream,
     io->qemuSock = io->unixSock = -1;
     io->streams = streams;
     io->nstreams = nstreams;
+    if (nstreams) {
+        if (VIR_ALLOC_N(io->fdStreams, nstreams) < 0)
+            goto error;
+        if (VIR_ALLOC_N(io->flags, nstreams) < 0)
+            goto error;
+    }
     io->wakeupRecvFD = wakeupFD[0];
     io->wakeupSendFD = wakeupFD[1];
 
@@ -4147,6 +4155,8 @@ qemuMigrationStartTunnel(virStreamPtr qemuStream,
  error:
     VIR_FORCE_CLOSE(wakeupFD[0]);
     VIR_FORCE_CLOSE(wakeupFD[1]);
+    VIR_FREE(io->fdStreams);
+    VIR_FREE(io->flags);
     VIR_FREE(io);
     return NULL;
 }
