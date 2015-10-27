@@ -3091,13 +3091,6 @@ qemuMigrationBeginPhase(virQEMUDriverPtr driver,
                         goto cleanup;
                     }
                 }
-
-                if (flags & VIR_MIGRATE_TUNNELLED) {
-                    virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
-                                   _("Selecting disks to migrate is not "
-                                     "implemented for tunnelled migration"));
-                    goto cleanup;
-                }
             } else {
                 virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
                                _("qemu does not support drive-mirror command"));
@@ -3106,13 +3099,8 @@ qemuMigrationBeginPhase(virQEMUDriverPtr driver,
         }
 
         if (has_drive_mirror) {
-            /* TODO support NBD for TUNNELLED migration */
-            if (flags & VIR_MIGRATE_TUNNELLED) {
-                VIR_WARN("NBD in tunnelled migration is currently not supported");
-            } else {
-                cookieFlags |= QEMU_MIGRATION_COOKIE_NBD;
-                priv->nbdPort = 0;
-            }
+            cookieFlags |= QEMU_MIGRATION_COOKIE_NBD;
+            priv->nbdPort = 0;
         }
     }
 
