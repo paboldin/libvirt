@@ -873,6 +873,8 @@ char *qemuMonitorGetTargetArch(qemuMonitorPtr mon);
 int qemuMonitorNBDServerStart(qemuMonitorPtr mon,
                               const char *host,
                               unsigned int port);
+int qemuMonitorNBDServerStartUnix(qemuMonitorPtr mon,
+                                  const char *path);
 int qemuMonitorNBDServerAdd(qemuMonitorPtr mon,
                             const char *deviceID,
                             bool writable);

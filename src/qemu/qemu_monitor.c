@@ -3594,6 +3594,18 @@ qemuMonitorNBDServerStart(qemuMonitorPtr mon,
 
 
 int
+qemuMonitorNBDServerStartUnix(qemuMonitorPtr mon,
+                              const char *file)
+{
+    VIR_DEBUG("file=%s", file);
+
+    QEMU_CHECK_MONITOR_JSON(mon);
+
+    return qemuMonitorJSONNBDServerStartUnix(mon, file);
+}
+
+
+int
 qemuMonitorNBDServerAdd(qemuMonitorPtr mon,
                         const char *deviceID,
                         bool writable)
