@@ -1694,6 +1694,7 @@ qemuMigrationPrecreateStorage(virConnectPtr conn,
 static int
 qemuMigrationStartNBDServer(virQEMUDriverPtr driver,
                             virDomainObjPtr vm,
+                            bool tunnel,
                             const char *listenAddr,
                             size_t nmigrate_disks,
                             const char **migrate_disks)
@@ -1701,8 +1702,9 @@ qemuMigrationStartNBDServer(virQEMUDriverPtr driver,
     int ret = -1;
     qemuDomainObjPrivatePtr priv = vm->privateData;
     unsigned short port = 0;
-    char *diskAlias = NULL;
+    char *diskAlias = NULL, *tunnelName = NULL;
     size_t i;
+    virQEMUDriverConfigPtr cfg = virQEMUDriverGetConfig(driver);
 
     for (i = 0; i < vm->def->ndisks; i++) {
         virDomainDiskDefPtr disk = vm->def->disks[i];
@@ -1720,10 +1722,18 @@ qemuMigrationStartNBDServer(virQEMUDriverPtr driver,
                                            QEMU_ASYNC_JOB_MIGRATION_IN) < 0)
             goto cleanup;
 
-        if (!port &&
+        if (!tunnel && !port &&
             ((virPortAllocatorAcquire(driver->migrationPorts, &port) < 0) ||
              (qemuMonitorNBDServerStart(priv->mon, listenAddr, port) < 0))) {
             goto exit_monitor;
+        }
+
+        if (tunnel && !tunnelName &&
+            ((virAsprintf(&tunnelName,
+                          "%s/domain-%s/qemu.nbdtunnelmigrate.src",
+                          cfg->libDir, vm->def->name) < 0) ||
+             (qemuMonitorNBDServerStartUnix(priv->mon, tunnelName) < 0))) {
+                goto exit_monitor;
         }
 
         if (qemuMonitorNBDServerAdd(priv->mon, diskAlias, true) < 0)
@@ -1736,7 +1746,9 @@ qemuMigrationStartNBDServer(virQEMUDriverPtr driver,
     ret = 0;
 
  cleanup:
+    virObjectUnref(cfg);
     VIR_FREE(diskAlias);
+    VIR_FREE(tunnelName);
     if (ret < 0)
         virPortAllocatorRelease(driver->migrationPorts, port);
     return ret;
@@ -3488,7 +3500,7 @@ qemuMigrationPrepareAny(virQEMUDriverPtr driver,
     if (mig->nbd &&
         flags & (VIR_MIGRATE_NON_SHARED_DISK | VIR_MIGRATE_NON_SHARED_INC) &&
         virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_NBD_SERVER)) {
-        if (qemuMigrationStartNBDServer(driver, vm, listenAddress,
+        if (qemuMigrationStartNBDServer(driver, vm, tunnel, listenAddress,
                                         nmigrate_disks, migrate_disks) < 0) {
             /* error already reported */
             goto endjob;
