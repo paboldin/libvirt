@@ -3605,6 +3605,25 @@ qemuMigrationPrepareTunnel(virQEMUDriverPtr driver,
 }
 
 
+int
+qemuMigrationOpenTunnel(virQEMUDriverPtr driver,
+                        virConnectPtr dconn,
+                        virStreamPtr st,
+                        virDomainDefPtr def,
+                        unsigned long flags)
+{
+    VIR_DEBUG("driver=%p, dconn=%p, st=%p, def=%p, flags=%lx",
+              driver, dconn, st, def, flags);
+
+    if (st == NULL) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("opening a tunnel requested but NULL stream passed"));
+        return -1;
+    }
+
+    return 0;
+}
+
 static virURIPtr
 qemuMigrationParseURI(const char *uri, bool *wellFormed)
 {
