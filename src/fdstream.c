@@ -52,6 +52,11 @@ struct virFDStreamData {
     int fd;
     int errfd;
     virCommandPtr cmd;
+
+    /* lazy UNIX stream data */
+    char *path;
+    bool abstract;
+
     unsigned long long offset;
     unsigned long long length;
 
@@ -335,6 +340,7 @@ virFDStreamCloseInt(virStreamPtr st, bool streamAbort)
     } else {
         virMutexUnlock(&fdst->lock);
         virMutexDestroy(&fdst->lock);
+        VIR_FREE(fdst->path);
         VIR_FREE(fdst);
     }
 
@@ -511,6 +517,43 @@ int virFDStreamOpen(virStreamPtr st,
 
 
 #if HAVE_SYS_UN_H
+static int
+virFDStreamConnectUNIXInternal(int fd,
+                               const char *path,
+                               bool abstract)
+{
+    struct sockaddr_un sa;
+    size_t i = 0;
+    int timeout = 3;
+
+    memset(&sa, 0, sizeof(sa));
+    sa.sun_family = AF_UNIX;
+    if (abstract) {
+        if (virStrcpy(sa.sun_path+1, path, sizeof(sa.sun_path)-1) == NULL)
+            return -1;
+        sa.sun_path[0] = '\0';
+    } else {
+        if (virStrcpy(sa.sun_path, path, sizeof(sa.sun_path)) == NULL)
+            return -1;
+    }
+
+    do {
+        ret = connect(fd, (struct sockaddr *)&sa, sizeof(sa));
+        if (ret == 0)
+            break;
+
+        if (errno == ENOENT || errno == ECONNREFUSED) {
+            /* ENOENT       : Socket may not have shown up yet
+             * ECONNREFUSED : Leftover socket hasn't been removed yet */
+            continue;
+        }
+
+        return -1;
+    } while ((++i <= timeout*5) && (usleep(.2 * 1000000) <= 0));
+
+    return 0;
+}
+
 int virFDStreamConnectUNIX(virStreamPtr st,
                            const char *path,
                            bool abstract)
@@ -526,30 +569,8 @@ int virFDStreamConnectUNIX(virStreamPtr st,
         goto error;
     }
 
-    memset(&sa, 0, sizeof(sa));
-    sa.sun_family = AF_UNIX;
-    if (abstract) {
-        if (virStrcpy(sa.sun_path+1, path, sizeof(sa.sun_path)-1) == NULL)
-            goto error;
-        sa.sun_path[0] = '\0';
-    } else {
-        if (virStrcpy(sa.sun_path, path, sizeof(sa.sun_path)) == NULL)
-            goto error;
-    }
-
-    do {
-        ret = connect(fd, (struct sockaddr *)&sa, sizeof(sa));
-        if (ret == 0)
-            break;
-
-        if (errno == ENOENT || errno == ECONNREFUSED) {
-            /* ENOENT       : Socket may not have shown up yet
-             * ECONNREFUSED : Leftover socket hasn't been removed yet */
-            continue;
-        }
-
+    if (virFDStreamConnectUNIXInternal(fd, path, abstract) < 0)
         goto error;
-    } while ((++i <= timeout*5) && (usleep(.2 * 1000000) <= 0));
 
     if (virFDStreamOpenInternal(st, fd, NULL, -1, 0) < 0)
         goto error;
@@ -557,6 +578,36 @@ int virFDStreamConnectUNIX(virStreamPtr st,
 
  error:
     VIR_FORCE_CLOSE(fd);
+    return -1;
+}
+
+int virFDLazyStreamConnectUNIX(virStreamPtr st,
+                               const char *path,
+                               bool abstract)
+{
+    int fd;
+    struct virFDStreamData *fdst;
+
+    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) {
+        virReportSystemError(errno, "%s", _("Unable to open UNIX socket"));
+        goto error;
+    }
+
+    if (virFDStreamOpenInternal(st, fd, NULL, -1, 0) < 0)
+        goto error;
+
+    st->driver = &virFDStreamDrv;
+    fdst = st->privateData;
+    if (VIR_STRDUP(fdst->path, path) < 0)
+        goto error;
+    fdst->abstract = abstract;
+    return 0;
+
+ error:
+    VIR_FORCE_CLOSE(fd);
+    VIR_FREE(fdst->path);
+    VIR_FREE(fdst);
     return -1;
 }
 #else
