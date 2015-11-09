@@ -6661,6 +6661,18 @@ remoteDispatchDomainInterfaceAddresses(virNetServerPtr server ATTRIBUTE_UNUSED,
 }
 
 
+static int
+remoteDispatchDomainMigrateOpenTunnel(virNetServerPtr server ATTRIBUTE_UNUSED,
+                                      virNetServerClientPtr client ATTRIBUTE_UNUSED,
+                                      virNetMessagePtr msg ATTRIBUTE_UNUSED,
+                                      virNetMessageErrorPtr rerr ATTRIBUTE_UNUSED,
+                                      remote_domain_migrate_open_tunnel_args *args ATTRIBUTE_UNUSED,
+                                      remote_domain_migrate_open_tunnel_ret *ret ATTRIBUTE_UNUSED)
+{
+    return -1;
+}
+
+
 /*----- Helpers. -----*/
 
 /* get_nonnull_domain and get_nonnull_network turn an on-wire

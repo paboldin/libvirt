@@ -3240,6 +3240,15 @@ struct remote_domain_rename_ret {
     int retcode;
 };
 
+struct remote_domain_migrate_open_tunnel_args {
+    remote_uuid uuid;
+    unsigned int flags;
+};
+
+struct remote_domain_migrate_open_tunnel_ret {
+    int retcode;
+};
+
 /*----- Protocol. -----*/
 
 /* Define the program number, protocol version and procedure numbers here. */
@@ -5712,5 +5721,13 @@ enum remote_procedure {
      * @acl: domain:write
      * @acl: domain:save
      */
-    REMOTE_PROC_DOMAIN_RENAME = 358
+    REMOTE_PROC_DOMAIN_RENAME = 358,
+
+    /**
+     * @generate: none
+     * @acl: domain:migrate
+     * @acl: domain:start
+     * @acl: domain:write
+     */
+    REMOTE_PROC_DOMAIN_MIGRATE_OPEN_TUNNEL = 359
 };
