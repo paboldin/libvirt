@@ -6663,13 +6663,51 @@ remoteDispatchDomainInterfaceAddresses(virNetServerPtr server ATTRIBUTE_UNUSED,
 
 static int
 remoteDispatchDomainMigrateOpenTunnel(virNetServerPtr server ATTRIBUTE_UNUSED,
-                                      virNetServerClientPtr client ATTRIBUTE_UNUSED,
-                                      virNetMessagePtr msg ATTRIBUTE_UNUSED,
-                                      virNetMessageErrorPtr rerr ATTRIBUTE_UNUSED,
-                                      remote_domain_migrate_open_tunnel_args *args ATTRIBUTE_UNUSED,
-                                      remote_domain_migrate_open_tunnel_ret *ret ATTRIBUTE_UNUSED)
+                                      virNetServerClientPtr client,
+                                      virNetMessagePtr msg,
+                                      virNetMessageErrorPtr rerr,
+                                      remote_domain_migrate_open_tunnel_args *args,
+                                      remote_domain_migrate_open_tunnel_ret *ret)
 {
-    return -1;
+    int rv = -1;
+    struct daemonClientPrivate *priv =
+        virNetServerClientGetPrivateData(client);
+    virStreamPtr st = NULL;
+    daemonClientStreamPtr stream = NULL;
+
+    if (!priv->conn) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("connection not open"));
+        goto cleanup;
+    }
+
+    if (!(st = virStreamNew(priv->conn, VIR_STREAM_NONBLOCK)) ||
+        !(stream = daemonCreateClientStream(client, st, remoteProgram,
+                                            &msg->header)))
+        goto cleanup;
+
+    ret->retcode = virDomainMigrateOpenTunnel(priv->conn, st,
+                                              (unsigned char *)args->uuid,
+                                              args->flags);
+
+    if (ret->retcode < 0)
+        goto cleanup;
+
+    if (daemonAddClientStream(client, stream, true) < 0)
+        goto cleanup;
+
+    rv = 0;
+
+ cleanup:
+    if (rv < 0) {
+        virNetMessageSaveError(rerr);
+        if (stream) {
+            virStreamAbort(st);
+            daemonFreeClientStream(client, stream);
+        } else {
+            virObjectUnref(st);
+        }
+    }
+    return rv;
 }
 
 
