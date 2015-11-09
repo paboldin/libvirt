@@ -200,6 +200,7 @@ $apis{virDomainMigratePerform3Params}->{vers} = "1.1.0";
 $apis{virDomainMigrateFinish3Params}->{vers} = "1.1.0";
 $apis{virDomainMigrateConfirm3Params}->{vers} = "1.1.0";
 
+$apis{virDomainMigrateOpenTunnel}->{vers} = "1.2.XX";
 
 
 # Now we want to get the mapping between public APIs

@@ -289,4 +289,10 @@ virTypedParameterValidateSet(virConnectPtr conn,
                              virTypedParameterPtr params,
                              int nparams);
 
+int
+virDomainMigrateOpenTunnel(virConnectPtr conn,
+                           virStreamPtr st,
+                           unsigned char uuid[VIR_UUID_BUFLEN],
+                           unsigned int flags);
+
 #endif

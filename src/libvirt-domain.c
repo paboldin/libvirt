@@ -11595,3 +11595,46 @@ virDomainInterfaceFree(virDomainInterfacePtr iface)
 
     VIR_FREE(iface);
 }
+
+
+/*
+ * Not for public use.  This function is part of the internal
+ * implementation of migration in the remote case.
+ */
+int
+virDomainMigrateOpenTunnel(virConnectPtr conn,
+                           virStreamPtr st,
+                           unsigned char uuid[VIR_UUID_BUFLEN],
+                           unsigned int flags)
+{
+    char uuidstr[VIR_UUID_STRING_BUFLEN];
+
+    virUUIDFormat(uuid, uuidstr);
+    VIR_DEBUG("conn=%p, stream=%p, uuid=%s, flags=%x",
+              conn, st, uuidstr, flags);
+
+    virResetLastError();
+
+    virCheckConnectReturn(conn, -1);
+    virCheckReadOnlyGoto(conn->flags, error);
+
+    if (conn != st->conn) {
+        virReportInvalidArg(conn, "%s",
+                            _("conn must match stream connection"));
+        goto error;
+    }
+
+    if (conn->driver->domainMigrateOpenTunnel) {
+        int rv;
+        rv = conn->driver->domainMigrateOpenTunnel(conn, st, uuid, flags);
+        if (rv < 0)
+            goto error;
+        return rv;
+    }
+
+    virReportUnsupportedError();
+
+ error:
+    virDispatchError(conn);
+    return -1;
+}

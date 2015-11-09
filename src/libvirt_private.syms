@@ -952,6 +952,7 @@ virDomainMigrateFinish;
 virDomainMigrateFinish2;
 virDomainMigrateFinish3;
 virDomainMigrateFinish3Params;
+virDomainMigrateOpenTunnel;
 virDomainMigratePerform;
 virDomainMigratePerform3;
 virDomainMigratePerform3Params;
