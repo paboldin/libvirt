@@ -3605,6 +3605,32 @@ qemuMigrationPrepareTunnel(virQEMUDriverPtr driver,
 }
 
 
+static int
+qemuMigrationOpenNBDTunnel(virQEMUDriverPtr driver,
+                           virStreamPtr st,
+                           const char *name)
+{
+    char *tunnelName = NULL;
+    int ret = -1;
+    virQEMUDriverConfigPtr cfg = virQEMUDriverGetConfig(driver);
+
+    if (virAsprintf(&tunnelName,
+                    "%s/domain-%s/qemu.nbdtunnelmigrate.src",
+                    cfg->libDir, name) < 0)
+        goto cleanup;
+
+    if (virFDStreamConnectUNIX(st, tunnelName, false) < 0)
+        goto cleanup;
+
+    ret = 0;
+
+ cleanup:
+    VIR_FREE(tunnelName);
+    virObjectUnref(cfg);
+    return ret;
+}
+
+
 int
 qemuMigrationOpenTunnel(virQEMUDriverPtr driver,
                         virConnectPtr dconn,
@@ -3620,6 +3646,9 @@ qemuMigrationOpenTunnel(virQEMUDriverPtr driver,
                        _("opening a tunnel requested but NULL stream passed"));
         return -1;
     }
+
+    if (flags & VIR_MIGRATE_TUNNEL_NBD)
+        return qemuMigrationOpenNBDTunnel(driver, st, def->name);
 
     return 0;
 }
