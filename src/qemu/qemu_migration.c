@@ -3966,6 +3966,11 @@ struct _qemuMigrationSpec {
     union {
         virStreamPtr stream;
     } fwd;
+
+    struct {
+        char *file;
+        int sock;
+    } nbd_tunnel_unix_socket;
 };
 
 #define TUNNEL_SEND_BUF_SIZE 65536
