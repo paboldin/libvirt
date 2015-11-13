@@ -8087,6 +8087,48 @@ remoteDomainRename(virDomainPtr dom, const char *new_name, unsigned int flags)
 }
 
 
+static int
+remoteDomainMigrateOpenTunnel(virConnectPtr dconn,
+                              virStreamPtr st,
+                              unsigned char uuid[VIR_UUID_BUFLEN],
+                              unsigned int flags)
+{
+    struct private_data *priv = dconn->privateData;
+    int rv = -1;
+    remote_domain_migrate_open_tunnel_args args;
+    remote_domain_migrate_open_tunnel_ret ret;
+    virNetClientStreamPtr netst;
+
+    remoteDriverLock(priv);
+
+    memset(&args, 0, sizeof(args));
+    memset(&ret, 0, sizeof(ret));
+
+    netst = virRemoteClientOpen(st, priv,
+                                REMOTE_PROC_DOMAIN_MIGRATE_OPEN_TUNNEL);
+
+    if (netst == NULL)
+        goto done;
+
+    memcpy(args.uuid, uuid, VIR_UUID_BUFLEN);
+    args.flags = flags;
+
+    if (call(dconn, priv, 0, REMOTE_PROC_DOMAIN_MIGRATE_OPEN_TUNNEL,
+             (xdrproc_t) xdr_remote_domain_migrate_open_tunnel_args, (char *) &args,
+             (xdrproc_t) xdr_remote_domain_migrate_open_tunnel_ret, (char *) &ret) == -1) {
+        virNetClientRemoveStream(priv->client, netst);
+        virObjectUnref(netst);
+        goto done;
+    }
+
+    rv = ret.retcode;
+
+ done:
+    remoteDriverUnlock(priv);
+    return rv;
+}
+
+
 /* get_nonnull_domain and get_nonnull_network turn an on-wire
  * (name, uuid) pair into virDomainPtr or virNetworkPtr object.
  * These can return NULL if underlying memory allocations fail,
@@ -8437,6 +8479,7 @@ static virHypervisorDriver hypervisor_driver = {
     .domainInterfaceAddresses = remoteDomainInterfaceAddresses, /* 1.2.14 */
     .domainSetUserPassword = remoteDomainSetUserPassword, /* 1.2.16 */
     .domainRename = remoteDomainRename, /* 1.2.19 */
+    .domainMigrateOpenTunnel = remoteDomainMigrateOpenTunnel, /* 1.2.XX */
 };
 
 static virNetworkDriver network_driver = {
