@@ -1212,6 +1212,13 @@ typedef int
                                const char *password,
                                unsigned int flags);
 
+typedef int
+(*virDrvDomainMigrateOpenTunnel)(virConnectPtr dconn,
+                                 virStreamPtr st,
+                                 unsigned char uuid[VIR_UUID_BUFLEN],
+                                 unsigned int flags);
+
+
 typedef struct _virHypervisorDriver virHypervisorDriver;
 typedef virHypervisorDriver *virHypervisorDriverPtr;
 
@@ -1443,6 +1450,7 @@ struct _virHypervisorDriver {
     virDrvDomainGetFSInfo domainGetFSInfo;
     virDrvDomainInterfaceAddresses domainInterfaceAddresses;
     virDrvDomainSetUserPassword domainSetUserPassword;
+    virDrvDomainMigrateOpenTunnel domainMigrateOpenTunnel;
 };
 
 
