@@ -1367,9 +1367,9 @@ main(int argc, char **argv)
                                   LOCALSTATEDIR, ctl->def->name);
                 virBufferAsprintf(&buf, "  \"/run/libvirt/**/%s.pid\" rwk,\n",
                                   ctl->def->name);
-                virBufferAsprintf(&buf, "  \"%s/run/libvirt/**/*.tunnelmigrate.dest.%s\" rw,\n",
+                virBufferAsprintf(&buf, "  \"%s/lib/libvirt/qemu/domain-%s/*tunnelmigrate.src\" rw,\n",
                                   LOCALSTATEDIR, ctl->def->name);
-                virBufferAsprintf(&buf, "  \"/run/libvirt/**/*.tunnelmigrate.dest.%s\" rw,\n",
+                virBufferAsprintf(&buf, "  \"/lib/libvirt/qemu/domain-%s/*tunnelmigrate.src\" rw,\n",
                                   ctl->def->name);
             }
             if (ctl->files)
