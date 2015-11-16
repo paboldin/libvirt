@@ -20064,6 +20064,29 @@ static int qemuDomainRename(virDomainPtr dom,
     goto endjob;
 }
 
+static int qemuDomainMigrateOpenTunnel(virConnectPtr dconn,
+                                       virStreamPtr st,
+                                       unsigned char uuid[VIR_UUID_BUFLEN],
+                                       unsigned int flags)
+{
+    virQEMUDriverPtr driver = dconn->privateData;
+    int ret = -1;
+    virDomainObjPtr vm;
+
+    virCheckFlags(VIR_MIGRATE_TUNNEL_NBD, -1);
+
+    vm = virDomainObjListFindByUUIDRef(driver->domains, uuid);
+
+    if (virDomainMigrateOpenTunnelEnsureACL(dconn, vm->def) < 0)
+        goto cleanup;
+
+    ret = qemuMigrationOpenTunnel(driver, dconn, st, vm->def, flags);
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
 static virHypervisorDriver qemuHypervisorDriver = {
     .name = QEMU_DRIVER_NAME,
     .connectOpen = qemuConnectOpen, /* 0.2.0 */
@@ -20272,6 +20295,7 @@ static virHypervisorDriver qemuHypervisorDriver = {
     .domainInterfaceAddresses = qemuDomainInterfaceAddresses, /* 1.2.14 */
     .domainSetUserPassword = qemuDomainSetUserPassword, /* 1.2.16 */
     .domainRename = qemuDomainRename, /* 1.2.19 */
+    .domainMigrateOpenTunnel = qemuDomainMigrateOpenTunnel, /* 1.2.XX */
 };
 
 
