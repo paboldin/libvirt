@@ -661,6 +661,9 @@ typedef enum {
     VIR_MIGRATE_RDMA_PIN_ALL      = (1 << 14), /* RDMA memory pinning */
 } virDomainMigrateFlags;
 
+typedef enum {
+    VIR_MIGRATE_TUNNEL_NBD        = (1 << 0), /* open tunnel for NBD */
+} virDomainMigrateTunnelFlags;
 
 /**
  * VIR_MIGRATE_PARAM_URI:
